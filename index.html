@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anime &amp; Manga Archive</title>
+  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- LOADING INDICATOR -->
+    <div id="loading-indicator" class="loading-indicator hidden">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- BACKEND ERROR BANNER -->
+    <div id="backend-error" class="backend-error hidden">
+      <span id="backend-error-text"></span>
+      <button id="backend-error-retry" onclick="location.reload()">Retry</button>
+    </div>
+
+    <!-- HEADER -->
+    <header class="app-header">
+      <button class="sidebar-toggle header-hamburger" id="btn-hamburger" onclick="toggleSidebarCollapse()" title="Menu">☰</button>
+      <div class="header-left" onclick="goHome()" style="cursor: pointer;">
+        <img id="header-logo" src="ico/logo.svg" alt="logo" />
+        <div class="title-area">
+          <div class="title-row">
+            <h1 id="app-title">Otaku Archive</h1>
+            <span class="pencil-icon" onclick="event.stopPropagation(); startRenameTitle()"><img src="ico/edit.svg" class="icon-img-sm" alt="Edit"/></span>
+            <input type="text" id="title-edit-input" class="title-edit-input hidden" onblur="finishRenameTitle()" onkeydown="handleRenameTitleKey(event)" />
+          </div>
+          <p id="app-subtitle">anime &amp; manga, corner to corner</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btn-home" onclick="goHome()">Home</button>
+        <button id="btn-add-media">+ Add title</button>
+        <button id="btn-theme" onclick="openSettingsModal()"><img src="ico/settings.svg" class="icon-img-sm" alt="Settings"/> Settings</button>
+        <button id="btn-random-header" class="icon-btn" onclick="onRandomHeader()" title="Random Header"><img src="ico/refresh.svg" class="icon-img-sm" alt="Random Header"/></button>
+      </div>
+    </header>
+
+    <!-- BODY -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarOverlay()"></div>
+    <div class="app-body">
+
+      <!-- SIDEBAR -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-section">
+          <div class="category-row">
+            <button class="category-btn" id="cat-anime" onclick="selectCategory('anime')">🌸 Anime <span class="count" id="count-anime">0</span></button>
+            <button class="category-btn" id="cat-manga" onclick="selectCategory('manga')">📖 Manga <span class="count" id="count-manga">0</span></button>
+          </div>
+        </div>
+
+        <!-- Status Filter -->
+        <div id="status-filter-section">
+          <button class="sidebar-section-btn" id="status-section-btn" onclick="toggleStatusFilter()">
+            <span class="sidebar-section-icon">✨</span>
+            <span class="section-btn-label">Status</span>
+          </button>
+          <ul id="status-filter-list" style="list-style: none; padding: 0; margin: 8px 0 0; display: none;">
+            <li data-status="favorite" class="status-filter-item" onclick="applyStatusFilter('favorite')">⭐ Favorites <span class="count" id="count-favorite">0</span></li>
+            <li data-status="watching" class="status-filter-item" onclick="applyStatusFilter('watching')">💖 Watching / Reading <span class="count" id="count-watching">0</span></li>
+            <li data-status="plan_to_watch" class="status-filter-item" onclick="applyStatusFilter('plan_to_watch')">📌 Plan to Watch / Read <span class="count" id="count-plan_to_watch">0</span></li>
+            <li data-status="completed" class="status-filter-item" onclick="applyStatusFilter('completed')">🎉 Completed <span class="count" id="count-completed">0</span></li>
+            <li data-status="on_hold" class="status-filter-item" onclick="applyStatusFilter('on_hold')">⏸️ On Hold <span class="count" id="count-on_hold">0</span></li>
+            <li data-status="dropped" class="status-filter-item" onclick="applyStatusFilter('dropped')">🚫 Dropped <span class="count" id="count-dropped">0</span></li>
+          </ul>
+        </div>
+
+        <!-- Genre Filter -->
+        <div id="genre-filter-section" style="margin-top: 20px;">
+          <button class="sidebar-section-btn" id="genre-section-btn" onclick="toggleSidebarSection('genre-list')">
+            <span class="sidebar-section-icon">🎀</span>
+            <span class="section-btn-label">Genres</span>
+          </button>
+          <ul id="genre-list" class="sidebar-sub-list hidden"><!-- JS --></ul>
+        </div>
+
+        <!-- Studio Filter -->
+        <div id="studio-filter-section" style="margin-top: 20px;">
+          <button class="sidebar-section-btn" id="studio-section-btn" onclick="toggleSidebarSection('studio-list')">
+            <span class="sidebar-section-icon">🏷️</span>
+            <span class="section-btn-label">Studios</span>
+          </button>
+          <ul id="studio-list" class="sidebar-sub-list hidden"><!-- JS --></ul>
+        </div>
+
+        <!-- Decade Filter -->
+        <div id="decade-filter-section" style="margin-top: 20px;">
+          <button class="sidebar-section-btn" id="decade-section-btn" onclick="toggleSidebarSection('decade-list')">
+            <span class="sidebar-section-icon">📅</span>
+            <span class="section-btn-label">Decades</span>
+          </button>
+          <ul id="decade-list" class="sidebar-sub-list hidden"><!-- JS --></ul>
+        </div>
+
+        <!-- Collections -->
+        <div style="margin-top: 20px;">
+          <button class="sidebar-section-btn secondary" onclick="showCollectionsListView()">
+            <span class="sidebar-section-icon"><img src="ico/collection.svg" class="icon-img-sm" alt=""/></span>
+            <span class="section-btn-label">Collections</span>
+          </button>
+        </div>
+
+        <!-- Franchises -->
+        <div style="margin-top: 12px;">
+          <button class="sidebar-section-btn secondary" onclick="showFranchisesListView()">
+            <span class="sidebar-section-icon"><img src="ico/franchise.svg" class="icon-img-sm" alt=""/></span>
+            <span class="section-btn-label">Franchises</span>
+          </button>
+        </div>
+
+        <!-- People -->
+        <div style="margin-top: 12px;">
+          <button class="sidebar-section-btn secondary" onclick="showPeopleListView()">
+            <span class="sidebar-section-icon">🎭</span>
+            <span class="section-btn-label">People</span>
+          </button>
+        </div>
+      <!-- Music -->
+        <div style="margin-top: 12px;">
+          <button class="sidebar-section-btn secondary" onclick="showMusicListView()">
+            <span class="sidebar-section-icon">♫</span>
+            <span class="section-btn-label">Music</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT -->
+      <main class="main-content">
+
+        <!-- HOMEPAGE -->
+        <section id="homepage">
+          <div class="hero">
+            <div class="hero-inner">
+              <img src="ico/logo.svg" class="hero-logo" alt=""/>
+              <h1 id="homepage-title">Otaku Archive</h1>
+              <p class="homepage-tagline">Your personal corner for every anime &amp; manga you love</p>
+              <div class="global-search">
+                <input type="text" id="global-search-input" placeholder="Search titles across your whole collection..." />
+                <button id="global-search-btn" onclick="performSearch()">Search <img src="ico/search.svg" class="icon-img-sm" alt="Search"/></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="homepage-stats-grid">
+            <div class="stat-chip pastel-pink" id="stat-anime"><span class="stat-number">0</span><span class="stat-label">Anime</span></div>
+            <div class="stat-chip pastel-mint" id="stat-manga"><span class="stat-number">0</span><span class="stat-label">Manga</span></div>
+            <div class="stat-chip clickable pastel-pink" id="stat-completed" onclick="applyStatusFilter('completed')"><span class="stat-number">0</span><span class="stat-label">Completed</span></div>
+            <div class="stat-chip clickable pastel-purple" id="stat-favorites" onclick="applyStatusFilter('favorite')"><span class="stat-number">0</span><span class="stat-label">Favorites</span></div>
+            <div class="stat-chip clickable pastel-blue" id="stat-watching" onclick="applyStatusFilter('watching')"><span class="stat-number">0</span><span class="stat-label">Watching</span></div>
+            <div class="stat-chip pastel-amber" id="stat-hours"><span class="stat-number">0</span><span class="stat-label">Hours Watched</span></div>
+          </div>
+
+          <div class="homepage-section reveal">
+            <h2>🌟 Recently Viewed</h2>
+            <div id="recently-viewed-list" class="media-hscroll"></div>
+          </div>
+
+          <div class="homepage-section reveal">
+            <h2>🆕 Last Added</h2>
+            <div id="last-added-list" class="media-hscroll"></div>
+          </div>
+
+          <div class="homepage-section reveal" id="home-franchises-section">
+            <h2>🔗 My Franchises</h2>
+            <div id="home-franchises-list" class="media-hscroll"></div>
+          </div>
+
+          <div class="homepage-section reveal get-started">
+            <button class="get-started-toggle" onclick="toggleGetStarted()">
+              <span>📖 Get Started Guide</span>
+              <span id="get-started-icon">▼</span>
+            </button>
+            <div class="get-started-content" id="get-started-content">
+              <h3>Welcome to your Anime &amp; Manga Archive!</h3>
+              <p>This is your personal space to track everything you watch and read across the years.</p>
+              <h4>Getting Started</h4>
+              <ol>
+                <li><strong>Add titles:</strong> Click "+ Add title" in the top right. You can add a single series or paste a whole list at once.</li>
+                <li><strong>Fetch metadata:</strong> Open a title and click "Fetch Metadata" to auto-pull the poster, banner, studio, description, cast, creators and episode/chapter list from AniList.</li>
+                <li><strong>Track progress:</strong> Tick episodes as you watch them, jot notes on individual episodes, mark titles as watching / completed / dropped and give them a personal score.</li>
+                <li><strong>Organize:</strong> Use collections for fun themes and franchises to group related titles (Fate, Gundam...).</li>
+              </ol>
+              <h4>Keyboard Shortcuts</h4>
+              <ul>
+                <li><strong>← →</strong> Navigate between titles in a list</li>
+                <li><strong>Esc</strong> Close modals</li>
+                <li><strong>Enter</strong> Perform search</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- MEDIA LIST VIEW -->
+        <section id="list-view" class="hidden">
+          <div class="list-header">
+            <h2 id="list-title">All Titles</h2>
+            <div class="list-actions">
+              <select id="list-sort-select" class="sort-dropdown" onchange="sortMediaList(this.value)">
+                <option value="title">Sort: Title</option>
+                <option value="year">Sort: Year</option>
+                <option value="recent">Sort: Recently updated</option>
+                <option value="score">Sort: My score</option>
+              </select>
+              <button id="btn-bulk-fetch" class="secondary" onclick="openBulkFetch()" title="Fetch metadata for all titles in this list">⚡ Fetch metadata</button>
+            </div>
+          </div>
+          <div class="alpha-index hidden" id="alpha-index"><!-- JS --></div>
+          <div class="media-grid" id="media-grid"></div>
+        </section>
+
+        <!-- FRANCHISES LIST -->
+        <section id="franchises-list-view" class="hidden">
+          <div class="section-header">
+            <h2><img src="ico/franchise.svg" class="icon-img-sm" alt=""/> Franchises</h2>
+            <button class="secondary" onclick="openFranchiseCreateModal()">+ New Franchise</button>
+          </div>
+          <div class="media-grid" id="franchises-grid"></div>
+        </section>
+
+        <!-- FRANCHISE DETAIL -->
+        <section id="franchise-detail-view" class="hidden">
+          <div class="section-header">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <button class="secondary" onclick="showFranchisesListView()">← Back</button>
+              <h2 id="franchise-detail-title" style="margin:0;"></h2>
+              <span class="count-badge" id="franchise-detail-count"></span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="secondary" onclick="openFranchiseEditModal()"><img src="ico/edit.svg" class="icon-img-sm" alt=""/> Edit</button>
+              <button class="secondary danger" onclick="deleteCurrentFranchise()"><img src="ico/trash.svg" class="icon-img-sm" alt=""/> Delete</button>
+            </div>
+          </div>
+          <p id="franchise-detail-desc" class="section-desc"></p>
+          <div class="franchise-add-row">
+            <select id="franchise-add-select"><option value="">Add a title to this franchise...</option></select>
+            <button class="secondary" onclick="addMediaToCurrentFranchise()">Add</button>
+          </div>
+          <div class="media-grid" id="franchise-detail-grid"></div>
+        </section>
+
+        <!-- COLLECTIONS LIST -->
+        <section id="collections-list-view" class="hidden">
+          <div class="section-header">
+            <h2><img src="ico/collection.svg" class="icon-img-sm" alt=""/> Collections</h2>
+            <button class="secondary" onclick="openCollectionCreateModal()">+ New Collection</button>
+          </div>
+          <div class="media-grid" id="collections-grid"></div>
+        </section>
+
+        <!-- COLLECTION DETAIL -->
+        <section id="collection-detail-view" class="hidden">
+          <div class="section-header">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <button class="secondary" onclick="showCollectionsListView()">← Back</button>
+              <h2 id="collection-detail-title" style="margin:0;"></h2>
+              <span class="count-badge" id="collection-detail-count"></span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="secondary" onclick="openCollectionEditModal()"><img src="ico/edit.svg" class="icon-img-sm" alt=""/> Edit</button>
+              <button class="secondary danger" onclick="deleteCurrentCollection()"><img src="ico/trash.svg" class="icon-img-sm" alt=""/> Delete</button>
+            </div>
+          </div>
+          <p id="collection-detail-desc" class="section-desc"></p>
+          <div class="franchise-add-row">
+            <select id="collection-add-select"><option value="">Add a title to this collection...</option></select>
+            <button class="secondary" onclick="addMediaToCurrentCollection()">Add</button>
+          </div>
+          <div class="media-grid" id="collection-detail-grid"></div>
+        </section>
+
+        <!-- PEOPLE LIST VIEW -->
+        <section id="people-list-view" class="hidden">
+          <div class="section-header">
+            <h2>🎭 People</h2>
+            <div class="list-actions">
+              <button id="btn-collab-toggle" class="secondary" onclick="toggleCollabMode()" title="Find people who collaborated together">🤝 Collaborate</button>
+              <input type="text" id="people-search-input" placeholder="Search people..." oninput="peopleSearch()" />
+              <select id="people-type-filter" onchange="applyPeopleKind(this.value)">
+                <option value="all">All people</option>
+                <option value="va">🎙 Voice actors</option>
+                <option value="staff">🎨 Staff</option>
+              </select>
+              <select id="people-role-filter" onchange="applyPeopleRole(this.value)">
+                <option value="">Any staff role</option>
+              </select>
+            </div>
+          </div>
+          <p class="section-desc">Voice actors and staff across your whole collection.</p>
+          <div id="collab-panel" class="hidden">
+            <div class="collab-toolbar">
+              <span class="collab-title">🤝 Collaboration</span>
+              <span class="muted collab-hint">Pick a person — only those who collaborated with your selection stay visible.</span>
+              <button class="secondary" onclick="collabReset()">Reset</button>
+              <button class="secondary" onclick="toggleCollabMode()">Exit</button>
+            </div>
+            <div id="collab-chips" class="collab-chips"></div>
+            <div id="collab-titles-wrap" class="hidden">
+              <h3 class="collab-titles-heading">🤝 Together on <button id="btn-collab-chars" class="secondary hidden" onclick="toggleCollabChars()">🎭 Show characters</button></h3>
+              <div class="media-grid" id="collab-titles"></div>
+            </div>
+          </div>
+          <div class="alpha-index hidden" id="people-alpha-index"><!-- JS --></div>
+          <div class="people-portrait-grid" id="people-grid"></div>
+          <div class="people-pagination hidden" id="people-pagination">
+            <button class="secondary" id="people-page-prev" onclick="peopleGoPage(-1)">‹ Prev</button>
+            <span id="people-page-info" class="people-page-info"></span>
+            <button class="secondary" id="people-page-next" onclick="peopleGoPage(1)">Next ›</button>
+          </div>
+        </section>
+
+        <!-- PEOPLE DETAIL VIEW -->
+        <section id="people-detail-view" class="hidden">
+          <button class="secondary" onclick="backToPeople()">← Back</button>
+          <div id="person-detail-body"><!-- JS --></div>
+        </section>
+
+        <!-- MUSIC LIST VIEW -->
+        <section id="music-list-view" class="hidden">
+          <div class="list-header">
+            <h2>♫ Music</h2>
+            <div class="list-actions">
+              <span class="muted" id="music-library-count"></span>
+            </div>
+          </div>
+          <p class="section-desc">Every title with a soundtrack linked. Click a square to float the mini player and listen.</p>
+          <div class="alpha-index hidden" id="music-alpha-index"><!-- JS --></div>
+          <div class="music-library-grid" id="music-library-grid"></div>
+        </section>
+
+        <!-- DETAIL VIEW -->
+        <section id="detail-view" class="hidden">
+          <div class="detail-splash" id="detail-splash">
+            <div class="detail-splash-shade"></div>
+            <div class="detail-head">
+              <button class="secondary" id="btn-detail-back" onclick="closeDetail()">← Back</button>
+              <div class="detail-head-actions">
+                <button class="secondary" onclick="openBannerLightbox()" title="View full banner">🖼 Banner</button>
+                <button class="secondary" id="btn-fetch-meta" onclick="fetchMetadataForCurrent()">✨ Fetch Metadata</button>
+                <button class="secondary" onclick="openCoverModal('banner')" title="Set banner image">🎨 Banner</button>
+                <button class="secondary" onclick="openEditMediaModal()"><img src="ico/edit.svg" class="icon-img-sm" alt=""/> Edit</button>
+                <button class="secondary danger" onclick="deleteCurrentMedia()"><img src="ico/trash.svg" class="icon-img-sm" alt=""/> Delete</button>
+              </div>
+            </div>
+            <div class="detail-main">
+              <div class="detail-poster" onclick="openCoverLightbox()">
+                <img id="detail-cover" src="" alt="cover" />
+                <span class="detail-cover-edit" onclick="event.stopPropagation(); openCoverModal('cover')"><img src="ico/edit.svg" class="icon-img-sm" alt=""/></span>
+              </div>
+              <div class="detail-info">
+                <h1 id="detail-title"></h1>
+                <p id="detail-alt-titles" class="detail-alt"></p>
+                <div id="detail-meta-chips" class="detail-chips"></div>
+                <div id="detail-status-row" class="detail-status-row"></div>
+                <div id="detail-personal" class="detail-personal"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-tabs">
+            <button class="tab-btn active" data-tab="overview" onclick="switchDetailTab('overview')">Overview</button>
+            <button class="tab-btn" data-tab="entries" onclick="switchDetailTab('entries')">📺 Episodes / Chapters</button>
+            <button class="tab-btn" data-tab="cast" onclick="switchDetailTab('cast')">🎭 Cast &amp; Staff</button>
+            <button class="tab-btn" data-tab="franchise" onclick="switchDetailTab('franchise')">🔗 Franchise</button>
+            <button class="tab-btn" data-tab="gallery" onclick="switchDetailTab('gallery')">🖼 Gallery</button>
+            <button class="tab-btn" data-tab="music" onclick="switchDetailTab('music')">🎵 Music</button>
+          </div>
+
+          <div class="detail-tab-content" id="tab-overview">
+            <div class="overview-row" id="overview-row">
+              <div id="detail-description" class="detail-description detail-description-box">
+                <div id="desc-page-wrap" class="desc-page-wrap"></div>
+                <div id="desc-pagenav" class="desc-pagenav hidden">
+                  <span id="desc-page-indicator">1/1</span>
+                  <button class="desc-pager-btn" id="desc-pager-prev" onclick="descGoPage(-1)" aria-label="Previous page">‹</button>
+                  <button class="desc-pager-btn" id="desc-pager-next" onclick="descGoPage(1)" aria-label="Next page">›</button>
+                </div>
+              </div>
+              <div class="overview-media-col"><div id="detail-trailer" class="detail-trailer"></div></div>
+            </div>
+            <div class="detail-notes-block">
+              <h3>📝 My Notes</h3>
+              <textarea id="detail-notes" rows="4" placeholder="Your personal notes about this title..." onchange="saveDetailNotes()" onblur="saveDetailNotes()"></textarea>
+            </div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-entries">
+            <div class="entries-toolbar">
+              <div class="entries-progress" id="entries-progress"></div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button class="secondary" onclick="seedEntriesPrompt()">⚬ Seed episode list</button>
+                <button class="secondary notes-filter-btn" id="btn-notes-filter" title="Show only entries with notes" onclick="toggleNotesFilter()">📝 Notes <span id="notes-count">0</span></button>
+                <button class="secondary" onclick="toggleAllEntries(!allEntriesDone())">Toggle all</button>
+              </div>
+            </div>
+            <div id="entries-list" class="entries-list"></div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-cast">
+            <div class="cast-toolbar">
+              <button onclick="openCreditModal()">+ Add Cast / Staff</button>
+            </div>
+            <div class="cast-section" data-section="cast">
+              <div class="section-head">
+                <h3>🎭 Characters &amp; Voice Actors</h3>
+                <button class="collapse-btn" onclick="toggleCastSection()" aria-expanded="true">▾</button>
+              </div>
+              <div id="cast-grid" class="people-grid"></div>
+            </div>
+            <div class="cast-section" data-section="staff">
+              <div class="section-head">
+                <h3>🎤 Staff &amp; Creators</h3>
+                <button class="collapse-btn" onclick="toggleStaffSection()" aria-expanded="true">▾</button>
+              </div>
+              <div id="staff-grid" class="people-grid"></div>
+            </div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-franchise">
+            <div id="detail-franchise-content">
+              <p class="muted">This title is not part of any franchise yet.</p>
+            </div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-gallery">
+            <div class="gallery-toolbar">
+              <button onclick="openGalleryModal()">+ Add images</button>
+            </div>
+            <p id="gallery-empty" class="muted hidden">No images yet — click “+ Add images” to start the gallery.</p>
+            <div id="gallery-grid" class="gallery-grid"></div>
+            <div id="gallery-pagenav" class="gallery-pagenav hidden">
+              <span id="gallery-page-indicator">1/1</span>
+              <button class="desc-pager-btn" id="gallery-pager-prev" onclick="galleryNav(-1)" aria-label="Previous page">‹</button>
+              <button class="desc-pager-btn" id="gallery-pager-next" onclick="galleryNav(1)" aria-label="Next page">›</button>
+            </div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-music">
+            <div id="music-setup">
+              <p class="muted">No soundtrack linked to this title yet. Paste the server path to its music folder (the folder itself, e.g.
+                <code>/path/to/your/music/library/CARDCAPTOR SAKURA [MP3]</code>)
+                and the player will appear here — you won’t see this form again.</p>
+              <div class="music-path-row">
+                <input type="text" id="music-path-input" placeholder="/path/to/your/music/library/album-folder" spellcheck="false" />
+                <button onclick="saveMusicPath()">Save</button>
+                <button class="secondary" onclick="closeMusic()">Cancel</button>
+              </div>
+            </div>
+
+            <div id="music-player" class="music-wrap hidden">
+              <div class="music-panel" id="music-panel">
+                <div class="music-panel-top">
+                  <div class="music-marquee"><span class="music-marquee-inner" id="music-marquee-text"></span></div>
+                  <button class="music-x" onclick="closeMusic()" title="Close player">✕</button>
+                </div>
+                <div class="music-body">
+                  <div class="music-cover-box" id="music-cover-box" onclick="musicToggleZoomCover()" title="Click to zoom cover"><img id="music-cover" alt="" /></div>
+                  <div class="music-main">
+                    <div class="music-album-row">
+                      <label class="music-label" for="music-album">ALBUM</label>
+                      <select id="music-album" onchange="musicSwitchAlbum()"></select>
+                      <button class="music-icon-btn" id="music-info-btn" title="Show source folder" onclick="toggleMusicInfo()">i</button>
+                    </div>
+                    <div id="music-tracklist" class="music-tracklist"></div>
+                    <div class="music-transport">
+                      <button class="music-tbtn" onclick="musicStep(-1)" title="Previous">◀◀</button>
+                      <button class="music-tbtn music-play" id="music-play" onclick="toggleMusicPlay()" title="Play / Pause">▶</button>
+                      <button class="music-tbtn" onclick="musicStep(1)" title="Next">▶▶</button>
+                      <div class="music-progress">
+                        <input type="range" id="music-seek" min="0" max="1000" value="0" oninput="musicSeek(this.value)" />
+                        <span id="music-time">0:00 / 0:00</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="music-panel-foot">
+                  <span class="music-vol-icon" title="Volume">♪</span>
+                  <input type="range" id="music-volume" min="0" max="1" step="0.01" value="1" oninput="setMusicVolume(this.value)" title="Volume" />
+                  <button class="music-float-btn" id="btn-music-float" onclick="toggleMusicFloat()">⎋ Float</button>
+                </div>
+                <div id="music-info" class="music-info hidden"><span class="music-info-text" id="music-info-text"></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ADD TITLE MODAL -->
+  <div class="modal hidden" id="modal-add-media">
+    <div class="modal-content">
+      <h2>Add Title</h2>
+      <div class="add-tabs">
+        <button class="tab-btn active" data-tab="single" onclick="switchAddTab('single')">Single</button>
+        <button class="tab-btn" data-tab="multi" onclick="switchAddTab('multi')">Paste List</button>
+      </div>
+      <div class="category-toggle">
+        <label><input type="radio" name="add-category" value="anime" checked onchange="updateAddCategory()" /> 🌸 Anime</label>
+        <label><input type="radio" name="add-category" value="manga" onchange="updateAddCategory()" /> 📖 Manga</label>
+      </div>
+      <div id="add-tab-single" class="tab-content active">
+        <label>Title
+          <input type="text" id="add-title-input" placeholder="e.g., Cowboy Bebop" />
+        </label>
+        <p class="tab-info">Creates the title with a placeholder poster. You can fetch the real metadata later.</p>
+      </div>
+      <div id="add-tab-multi" class="tab-content hidden">
+        <label>Paste titles (one per line)
+          <textarea id="add-titles-list" rows="8" placeholder="Inuyasha&#10;Naruto&#10;Your Lie in April"></textarea>
+        </label>
+        <p class="tab-info">Each line becomes a separate entry.</p>
+      </div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-add-media', false)">Cancel</button>
+        <button id="btn-add-media-confirm" onclick="confirmAddMedia()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT TITLE MODAL -->
+  <div class="modal hidden" id="modal-edit-media">
+    <div class="modal-content">
+      <h2>Edit Title</h2>
+      <input type="hidden" id="edit-media-id" />
+      <label>Title <input type="text" id="edit-media-title" /></label>
+      <label>Alternate titles <input type="text" id="edit-media-alt" placeholder="English / native titles, comma separated" /></label>
+      <label>Type <input type="text" id="edit-media-type" placeholder="TV / OVA / Movie / Manga / One-shot..." /></label>
+      <div class="form-row">
+        <label>Year <input type="number" id="edit-media-year" placeholder="e.g., 1998" /></label>
+        <label id="edit-ep-col-label">Episodes <input type="number" id="edit-media-episodes" min="0" /></label>
+      </div>
+      <label>Studio <input type="text" id="edit-media-studio" placeholder="e.g., Studio Sunrise" /></label>
+      <label>Genres <input type="text" id="edit-media-genres" placeholder="Action, Drama, Sci-Fi" /></label>
+      <div id="edit-media-season-block">
+        <div class="season-count-row">
+          <label>Number of Seasons <input type="number" id="edit-media-seasons" min="1" max="99" maxlength="2" oninput="seasonCountChanged()" /></label>
+          <span id="edit-media-season-total" class="season-total"></span>
+        </div>
+        <div id="edit-media-season-rows"></div>
+      </div>
+      <label>Duration (min) <input type="number" id="edit-media-duration" min="0" /></label>
+      <label>Trailer <input type="text" id="edit-media-trailer" placeholder="https://www.youtube.com/watch?v=... or video ID" /></label>
+      <label>Description
+        <div class="md-toolbar">
+          <button type="button" class="md-toolbar-btn" onclick="insertFormat('edit-media-desc','**','**')" title="Bold">B</button>
+          <button type="button" class="md-toolbar-btn md-toolbar-italic" onclick="insertFormat('edit-media-desc','*','*')" title="Italic">I</button>
+          <span class="md-toolbar-hint">Wrap text in **bold** or *italic*</span>
+        </div>
+        <textarea id="edit-media-desc" rows="5" placeholder="A short description..."></textarea>
+      </label>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-edit-media', false)">Cancel</button>
+        <button onclick="saveEditMedia()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COVER/BANNER MODAL -->
+  <div class="modal hidden" id="modal-cover">
+    <div class="modal-content">
+      <h2 id="cover-modal-title">Set Cover</h2>
+      <input type="hidden" id="cover-target" />
+      <div class="cover-upload-tabs">
+        <button class="tab-btn active" data-tab="upload" onclick="switchCoverTab('upload')">Upload</button>
+        <button class="tab-btn" data-tab="url" onclick="switchCoverTab('url')">From URL</button>
+      </div>
+      <div id="cover-tab-upload" class="tab-content active">
+        <label>Image file <input type="file" id="cover-file-input" accept="image/*" onchange="previewCoverSelection(event)" /></label>
+      </div>
+      <div id="cover-tab-url" class="tab-content hidden">
+        <label>Image URL <input type="text" id="cover-url-input" placeholder="https://..." onchange="previewCoverSelection(event)" /></label>
+      </div>
+      <div id="banner-pos-panel" class="banner-pos-panel hidden">
+        <div class="banner-pos-box" id="banner-pos-box">
+          <img id="banner-pos-img" src="" alt="" draggable="false" />
+        </div>
+        <div class="banner-pos-tools">
+          <button type="button" class="secondary" onclick="nudgeBannerPos(-5)" title="Move up">▲</button>
+          <span id="banner-pos-label">50%</span>
+          <button type="button" class="secondary" onclick="nudgeBannerPos(5)" title="Move down">▼</button>
+        </div>
+        <p class="banner-pos-hint">Drag the image up/down to center it, then press Save.</p>
+      </div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-cover', false)">Cancel</button>
+        <button id="btn-cover-save" onclick="saveCoverOrBanner()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GALLERY ADD MODAL -->
+  <div class="modal hidden" id="modal-gallery">
+    <div class="modal-content">
+      <h2 id="gallery-modal-title">Add images to gallery</h2>
+      <div class="cover-upload-tabs">
+        <button class="tab-btn active" data-tab="upload" onclick="switchGalleryTab('upload')">Upload</button>
+        <button class="tab-btn" data-tab="url" onclick="switchGalleryTab('url')">From URL</button>
+      </div>
+      <div id="gallery-tab-upload" class="tab-content active">
+        <label>Image files (you can select several)
+          <input type="file" id="gallery-file-input" accept="image/*" multiple />
+        </label>
+      </div>
+      <div id="gallery-tab-url" class="tab-content hidden">
+        <label>Image URLs (one per line)
+          <textarea id="gallery-url-input" rows="6" placeholder="https://example.com/img1.jpg&#10;https://example.com/img2.jpg"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-gallery', false)">Cancel</button>
+        <button id="btn-gallery-save" onclick="saveGalleryImages()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- METADATA PICKER MODAL -->
+  <div class="modal hidden" id="modal-meta-picker">
+    <div class="modal-content modal-meta-content">
+      <h2>Found on AniList</h2>
+      <p class="muted" style="margin-top:-4px;">Pick the right match to import metadata.</p>
+      <div id="meta-picker-list" class="meta-picker-list"></div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-meta-picker', false)">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENTRY NOTES MODAL -->
+  <div class="modal hidden" id="modal-entry-notes">
+    <div class="modal-content">
+      <h2 id="entry-note-title">Notes</h2>
+      <textarea id="entry-note-text" rows="5" placeholder="Your personal note for this entry..."></textarea>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-entry-notes', false)">Cancel</button>
+        <button onclick="saveEntryNote()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BULK FETCH MODAL -->
+  <div class="modal hidden" id="modal-bulk-fetch">
+    <div class="modal-content">
+      <h2>Fetching Metadata...</h2>
+      <div class="progress-track"><div class="progress-fill" id="bulk-progress-fill"></div></div>
+      <p class="muted" id="bulk-progress-text">0 / 0</p>
+      <div class="bulk-options">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;font-weight:600;color:var(--text);">
+          <input type="checkbox" id="bulk-mode-missing" checked onchange="setBulkMode(this.checked ? 'missing' : 'all')" style="width:auto;" />
+          Only titles with missing metadata
+        </label>
+      </div>
+      <div id="bulk-progress-list" class="bulk-progress-list"></div>
+      <div class="modal-actions">
+        <button id="btn-bulk-cancel" class="danger" onclick="cancelBulkFetch()">Cancel</button>
+        <button id="btn-bulk-close" class="secondary hidden" onclick="toggleModal('#modal-bulk-fetch', false)">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREDIT MODAL -->
+  <div class="modal hidden" id="modal-credit">
+    <div class="modal-content">
+      <h2 id="credit-modal-title">Add Cast / Staff</h2>
+      <div class="credit-kind-toggle">
+        <label><input type="radio" name="credit-kind" value="staff" checked onchange="updateCreditKind()" /> 🎨 Staff</label>
+        <label><input type="radio" name="credit-kind" value="cast" onchange="updateCreditKind()" /> 🎭 Cast</label>
+      </div>
+
+      <!-- STAFF FIELDS -->
+      <div id="credit-staff-fields">
+        <label>Person Name
+          <input type="text" id="credit-name" placeholder="e.g., Shinichiro Watanabe" autocomplete="off" />
+          <div class="person-suggest hidden" id="credit-name-suggest"></div>
+        </label>
+        <input type="hidden" id="credit-person-id" value="" />
+        <label>Role / Job
+          <input type="text" id="credit-role" placeholder="Director, Character Design, Music..." />
+        </label>
+        <label>Image URL
+          <input type="text" id="credit-image" placeholder="https://..." oninput="creditAlignPreview('person')" />
+        </label>
+        <div class="align-row">
+          <button type="button" class="secondary" onclick="document.getElementById('credit-image-file').click()">Upload file</button>
+          <input type="file" id="credit-image-file" class="hidden" accept="image/*" onchange="creditFileSelected('person', this)" />
+        </div>
+        <div class="align-panel hidden" id="credit-person-align">
+          <div class="align-preview-portrait"><div class="align-preview" id="credit-person-preview"></div></div>
+          <div class="align-controls">
+            <label>X <input type="range" id="credit-person-pos-x" min="0" max="100" value="50" oninput="creditAlignPos('person')" /> <span id="credit-person-pos-x-val">50</span>%</label>
+            <label>Y <input type="range" id="credit-person-pos-y" min="0" max="100" value="50" oninput="creditAlignPos('person')" /> <span id="credit-person-pos-y-val">50</span>%</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAST FIELDS -->
+      <div id="credit-cast-fields" class="hidden">
+        <label>Character Name
+          <input type="text" id="credit-char-name" placeholder="e.g., Spike Spiegel" />
+        </label>
+        <label>Character Image URL
+          <input type="text" id="credit-char-image" placeholder="https://..." oninput="creditAlignPreview('character')" />
+        </label>
+        <div class="align-row">
+          <button type="button" class="secondary" onclick="document.getElementById('credit-char-image-file').click()">Upload file</button>
+          <input type="file" id="credit-char-image-file" class="hidden" accept="image/*" onchange="creditFileSelected('character', this)" />
+        </div>
+        <div class="align-panel hidden" id="credit-character-align">
+          <div class="align-preview-portrait"><div class="align-preview" id="credit-character-preview"></div></div>
+          <div class="align-controls">
+            <label>X <input type="range" id="credit-character-pos-x" min="0" max="100" value="50" oninput="creditAlignPos('character')" /> <span id="credit-character-pos-x-val">50</span>%</label>
+            <label>Y <input type="range" id="credit-character-pos-y" min="0" max="100" value="50" oninput="creditAlignPos('character')" /> <span id="credit-character-pos-y-val">50</span>%</label>
+          </div>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin:14px 0; opacity:.4;" />
+        <label>Voice Actor Name
+          <input type="text" id="credit-va" placeholder="e.g., Kōichi Yamadera" autocomplete="off" />
+          <div class="person-suggest hidden" id="credit-va-suggest"></div>
+        </label>
+        <input type="hidden" id="credit-va-person-id" value="" />
+        <label>VA Image URL
+          <input type="text" id="credit-va-image" placeholder="https://..." oninput="creditAlignPreview('va')" />
+        </label>
+        <div class="align-row">
+          <button type="button" class="secondary" onclick="document.getElementById('credit-va-image-file').click()">Upload file</button>
+          <input type="file" id="credit-va-image-file" class="hidden" accept="image/*" onchange="creditFileSelected('va', this)" />
+        </div>
+        <div class="align-panel hidden" id="credit-va-align">
+          <div class="align-preview-portrait"><div class="align-preview" id="credit-va-preview"></div></div>
+          <div class="align-controls">
+            <label>X <input type="range" id="credit-va-pos-x" min="0" max="100" value="50" oninput="creditAlignPos('va')" /> <span id="credit-va-pos-x-val">50</span>%</label>
+            <label>Y <input type="range" id="credit-va-pos-y" min="0" max="100" value="50" oninput="creditAlignPos('va')" /> <span id="credit-va-pos-y-val">50</span>%</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button onclick="closeCreditModal()">Cancel</button>
+        <button onclick="saveCredit()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERSON EDIT MODAL -->
+  <div class="modal hidden" id="modal-person">
+    <div class="modal-content">
+      <h2>Edit Person</h2>
+      <input type="hidden" id="person-edit-id" value="" />
+      <label>Name
+        <input type="text" id="person-edit-name" placeholder="e.g., Kōichi Yamadera" />
+      </label>
+      <label>Native name
+        <input type="text" id="person-edit-native" placeholder="e.g., 山寺宏一" />
+      </label>
+      <div class="form-row">
+        <label>Birth date <input type="text" id="person-edit-birth" placeholder="e.g., 1961-06-17" /></label>
+        <label>Nationality <input type="text" id="person-edit-nationality" placeholder="e.g., Japan" /></label>
+      </div>
+      <label>Bio
+        <textarea id="person-edit-bio" rows="4" placeholder="A short biography..."></textarea>
+      </label>
+      <label>Image URL
+        <input type="text" id="person-edit-image" placeholder="https://..." oninput="personEditorAlignPreview()" />
+      </label>
+      <div class="align-row">
+        <button type="button" class="secondary" onclick="document.getElementById('person-edit-image-file').click()">Upload file</button>
+        <input type="file" id="person-edit-image-file" class="hidden" accept="image/*" onchange="personEditorFileSelected(this)" />
+      </div>
+      <div class="align-panel hidden" id="person-edit-align">
+        <div class="align-preview-portrait"><div class="align-preview" id="person-edit-preview"></div></div>
+        <div class="align-controls">
+          <label>X <input type="range" id="person-edit-pos-x" min="0" max="100" value="50" oninput="personEditorAlignPos()" /> <span id="person-edit-pos-x-val">50</span>%</label>
+          <label>Y <input type="range" id="person-edit-pos-y" min="0" max="100" value="50" oninput="personEditorAlignPos()" /> <span id="person-edit-pos-y-val">50</span>%</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-person', false)">Cancel</button>
+        <button onclick="savePersonEditor()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRANCHISE CREATE/EDIT MODAL -->
+  <div class="modal hidden" id="modal-franchise">
+    <div class="modal-content">
+      <h2 id="franchise-modal-title">New Franchise</h2>
+      <input type="hidden" id="franchise-edit-id" />
+      <label>Name <input type="text" id="franchise-name" placeholder="e.g., Fate" /></label>
+      <label>Description <textarea id="franchise-desc" rows="3" placeholder="A short description..."></textarea></label>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-franchise', false)">Cancel</button>
+        <button onclick="saveFranchiseModal()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLLECTION CREATE/EDIT MODAL -->
+  <div class="modal hidden" id="modal-collection">
+    <div class="modal-content">
+      <h2 id="collection-modal-title">New Collection</h2>
+      <input type="hidden" id="collection-edit-id" />
+      <label>Name <input type="text" id="collection-name" placeholder="e.g., Cyberpunk themed" /></label>
+      <label>Description <textarea id="collection-desc" rows="3"></textarea></label>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-collection', false)">Cancel</button>
+        <button onclick="saveCollectionModal()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modal hidden" id="modal-settings">
+    <div class="modal-content">
+      <h2>Settings</h2>
+      <label>Archive title <input type="text" id="settings-title" /></label>
+      <label>Subtitle <input type="text" id="settings-subtitle" /></label>
+      <hr style="border:none; border-top:1px solid var(--border); margin:16px 0; opacity:.4;" />
+      <label>Accent color <input type="color" id="settings-accent" /></label>
+      <label>Secondary color <input type="color" id="settings-secondary" /></label>
+      <label>Background tint <input type="color" id="settings-bg" /></label>
+      <div style="margin:16px 0; text-align:center; color:var(--muted);">— header image —</div>
+      <label>Header image URL <input type="text" id="settings-header-url" placeholder="https://..." onblur="onHeaderUrlChange()" /></label>
+      <label>Or upload from disk <input type="file" id="settings-header-upload" accept="image/*" onchange="uploadHeaderFile()" /></label>
+      <div class="settings-header-actions">
+        <button type="button" class="secondary" onclick="randomHeader()"><img src="ico/refresh.svg" class="icon-img-sm" alt=""/> Random header</button>
+        <button type="button" class="secondary danger" onclick="clearHeader()">Remove header</button>
+      </div>
+      <div id="settings-header-gallery" class="settings-header-gallery"></div>
+      <div style="margin:16px 0; text-align:center; color:var(--muted);">— music —</div>
+      <label class="settings-check"><input type="checkbox" id="settings-music-autoplay" /> Autoplay soundtrack when opening the Music tab</label>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-settings', false)">Cancel</button>
+        <button onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX -->
+  <div class="lightbox hidden" id="image-lightbox">
+    <div class="lightbox-backdrop" onclick="closeLightbox()"></div>
+    <div class="lightbox-stage" id="lightbox-stage" onclick="closeLightbox()">
+      <img id="lightbox-img" src="" alt="Full size" draggable="false" onclick="event.stopPropagation(); toggleLightboxZoom()" />
+    </div>
+    <button class="lightbox-close" onclick="closeLightbox()">×</button>
+    <button class="lightbox-zoom-btn" id="lightbox-zoom-btn" onclick="toggleLightboxZoom()">See full size</button>
+    <button class="lightbox-nav-btn" id="lightbox-prev" onclick="lightboxNav(-1)" title="Previous image">‹</button>
+    <button class="lightbox-nav-btn" id="lightbox-next" onclick="lightboxNav(1)" title="Next image">›</button>
+  </div>
+
+  <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
+  <script src="config.js"></script>
+  <script src="app.js?v=23"></script>
+</body>
+</html>

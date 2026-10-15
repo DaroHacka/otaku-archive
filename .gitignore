@@ -1,0 +1,46 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# ---- IDEs / editors ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs ----
+*.log
+
+# ---- Runtime config (created per install) ----
+.otaku_archive.conf
+config.js
+
+# ---- User data (never committed) ----
+db/
+data/
+covers/
+banners/
+headers/
+metadata/
+trailers/
+gallery/
+music/
+
+# ---- User theme assets (keep the folder, ignore its contents) ----
+theme_images/*
+!theme_images/.gitkeep
+
+# ---- Backups ----
+*.bak
+*.backup
+*_backup*

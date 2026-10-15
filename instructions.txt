@@ -1,0 +1,71 @@
+# Otaku Archive - Setup Instructions
+
+## Quick start
+
+```bash
+python Otaku_Archive.py
+```
+
+The launcher handles everything on first run:
+
+- creates a Python virtual environment and installs dependencies
+- asks where to store your archive data
+- asks where your music library lives
+- asks which ports to use (defaults: backend 9001, web interface 3012)
+- optionally enables auto-start on boot (Linux/systemd)
+- starts the servers and prints the address to open
+
+Then open the address it shows, e.g. `http://localhost:3012`.
+
+## Access the application
+
+On the machine running it:
+
+```
+http://localhost:3012
+```
+
+From another device on your network:
+
+```
+http://<your-local-ip>:3012
+```
+
+The launcher prints your local IP for exactly this. Press **Ctrl+C** to stop the servers.
+
+## Requirements
+
+- **Python 3.9+** (3.11 recommended)
+- **ffmpeg** — optional, only needed to download trailers for offline playback
+- An internet connection for fetching metadata from AniList (open API, no key needed)
+
+## Changing ports later
+
+Re-run the launcher and accept the saved defaults, or edit `.otaku_archive.conf`
+next to the app and run it again:
+
+```json
+{
+  "data_dir": "/path/to/data",
+  "music_dir": "/path/to/music",
+  "backend_port": 9001,
+  "frontend_port": 3012,
+  "auto_boot": false
+}
+```
+
+The launcher also writes `config.js` (used by the web interface to reach the
+backend) whenever you change ports.
+
+## Linking music
+
+Open a title's **Music** tab and paste the path to the album folder on your
+machine. It must sit inside the music library you configured during setup.
+
+## First steps after setup
+
+1. Click **Add Title** (or **Paste List**) to create entries.
+2. Open a title and use the AniList metadata search to fill in the real data.
+3. Track progress in the **Episodes / Chapters** tab.
+4. Link soundtracks in the **Music** tab; browse all of them on the **Music** page.
+5. Visit **People** to explore cast & staff, and use **Together on** to compare collaborators.
