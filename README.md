@@ -12,69 +12,105 @@ It's built for people who want a **tidy, searchable, good-looking** shelf of the
 
 ---
 
-## ✨ Screenshots
+
 
 <p align="center">
   <img src="preview/Screenshot%202026-10-15%20132927.png" width="900" alt="Otaku Archive - library view">
 </p>
 
-<p align="center">
-  <img src="preview/Screenshot%202026-10-15%20132952.png" width="900" alt="Otaku Archive - title detail">
-</p>
 
-<p align="center">
-  <img src="preview/Screenshot%202026-10-15%20133149.png" width="900" alt="Otaku Archive - metadata search">
-</p>
-
-<p align="center">
-  <img src="preview/Screenshot%202026-10-15%20133209.png" width="900" alt="Otaku Archive - cast and staff">
-</p>
-
-<p align="center">
-  <img src="preview/Screenshot%202026-10-15%20133321.png" width="900" alt="Otaku Archive - people and collaboration">
-</p>
-
-<p align="center">
-  <img src="preview/Screenshot%202026-10-15%20133345.png" width="900" alt="Otaku Archive - music player">
-</p>
 
 ---
 
 ## 🚀 Features
 
 ### 📚 Your collection
-- **Add titles** one at a time, or **paste a whole list** (one title per line) to create many entries at once.
-- Track **anime and manga** side by side.
-- **Status tracking:** Watching, Completed, Plan to Watch, On Hold, Dropped, and ⭐ Favorite, plus a personal score and free-text notes.
-- **Episodes / chapters:** seed an entry with numbered episodes or chapters, adjust the count, tick progress off as you go, and jot per-episode notes.
-- **Filters & search:** browse by status, genre, studio, and decade, search across the archive, and jump around with an alphabetical index.
-- **Collections & franchises:** group related titles into collections, and link a title to its franchise so sequels and spin-offs stay together.
+
+* **Add titles** one at a time, or **paste a whole list** (one title per line) to create many entries at once.
+* Track **anime and manga** side by side.
+* **Status tracking:** Watching, Completed, Plan to Watch, On Hold, Dropped, and ⭐ Favorite, plus a personal score and free-text notes.
+* **Episodes / chapters:** seed an entry with numbered episodes or chapters, adjust the count, tick progress off as you go, and jot per-episode notes.
+* **Filters & search:** browse by status, genre, studio, and decade, search across the archive, and jump around with an alphabetical index.
+* **Collections & franchises:** group related titles into collections, and link a title to its franchise so sequels and spin-offs stay together.
+
+
+
+<p align="center">
+  <img src="preview/Screenshot%202026-10-15%20132952.png" width="900" alt="Otaku Archive - title detail">
+</p>
+
+
+
+
 
 ### 🖼 Artwork & metadata
-- **Automatic metadata from AniList** (an open, keyless API) — search a title, pick the right match, and the app fills in the description, genres, studio, season/year, episode counts, cover art, cast & staff, and the trailer.
-- **Bulk fetch** to enrich many titles at once — perfect after importing a big list.
-- **Covers, banners, and gallery images:** upload from disk or pull from a URL, and fine-tune banner framing.
+
+* **Automatic metadata from AniList** (an open, keyless API) — search a title, pick the right match, and the app fills in the description, genres, studio, season/year, episode counts, cover art, cast & staff, and the trailer.
+* **Bulk fetch** to enrich many titles at once — perfect after importing a big list.
+* **Covers, banners, and gallery images:** upload from disk or pull from a URL, and fine-tune banner framing.
+
+
+
+<p align="center">
+  <img src="preview/Screenshot%202026-10-15%20133149.png" width="900" alt="Otaku Archive - metadata search">
+</p>
+
+
 
 ### 🎬 Trailers
-- When metadata is applied, the title's **YouTube trailer is added automatically** and plays right inside the detail view.
-- Optionally **download the trailer** to your machine for offline and iOS-friendly playback (needs `ffmpeg` installed).
+
+* When metadata is applied, the title's **YouTube trailer is added automatically** and plays right inside the detail view.
+* Optionally **download the trailer** to your machine for offline and iOS-friendly playback (needs `ffmpeg` installed).
+
+
+
+<p align="center">
+  <img src="preview/Screenshot%202026-10-15%20133209.png" width="900" alt="Otaku Archive - cast and staff">
+</p>
+
+
+
+
 
 ### 🎭 People & collaboration
-- A **People** directory for voice actors, staff, and creators, with portraits, native names, birthdays, and bios.
-- The index is sorted by **surname**, so people line up the way a real index should.
-- **Collaborate / "Together on":** select two or more people and the app shows **every title they worked on together** — great for spotting favourite voice-actor pairings.
-- Hit **🎭 Show characters** to line up the **character portraits** each person played, title by title, with the actor's name and the character underneath.
+
+* A **People** directory for voice actors, staff, and creators, with portraits, native names, birthdays, and bios.
+* The index is sorted by **surname**, so people line up the way a real index should.
+* **Collaborate / "Together on":** select two or more people and the app shows **every title they worked on together** — great for spotting favourite voice-actor pairings.
+* Hit **🎭 Show characters** to line up the **character portraits** each person played, title by title, with the actor's name and the character underneath.
+
+
+
+<p align="center">
+  <img src="preview/Screenshot%202026-10-15%20133321.png" width="900" alt="Otaku Archive - people and collaboration">
+</p>
+
+
+
+
 
 ### 🎵 Music
-- Link a soundtrack to any title by **pasting the path to its album folder** on your machine — albums and tracks are detected automatically, complete with cover art.
-- A **floating player** with a track list, cover zoom, and a volume slider that remembers your setting.
-- A dedicated **Music library** page that gathers every title you've linked music to.
-- **Autoplay options** in Settings: choose whether opening a title's music tab starts playing on its own.
+
+* Link a soundtrack to any title by **pasting the path to its album folder** on your machine — albums and tracks are detected automatically, complete with cover art.
+* A **floating player** with a track list, cover zoom, and a volume slider that remembers your setting.
+* A dedicated **Music library** page that gathers every title you've linked music to.
+* **Autoplay options** in Settings: choose whether opening a title's music tab starts playing on its own.
+
+
+
+<p align="center">
+  <img src="preview/Screenshot%202026-10-15%20133345.png" width="900" alt="Otaku Archive - music player">
+</p>
+
+
+
+
 
 ### 🎨 Make it yours
-- Rename the archive title and subtitle.
-- Pick your **accent, secondary, and background colours**.
-- Rotating **header images** with upload and gallery support.
+
+* Rename the archive title and subtitle.
+* Pick your **accent, secondary, and background colours**.
+* Rotating **header images** with upload and gallery support.
 
 ---
 
@@ -104,10 +140,11 @@ Then open the address it shows, e.g. **http://localhost:3012** — or, from anot
 Your settings live in `.otaku_archive.conf` next to the app, so you can re-run `python Otaku_Archive.py` any time to start it again. Press **Ctrl+C** to stop.
 
 ### Under the hood
-- **Backend:** FastAPI + Uvicorn, serving a JSON API.
-- **Frontend:** plain HTML/CSS/JavaScript, served as static files.
-- **Database:** a single SQLite file (`db/otaku.db`), created automatically and empty on first run — the framework ships without any data, and you curate your own.
-- **Metadata:** AniList GraphQL (`https://graphql.anilist.co`) — public, no API key required. An internet connection is needed to fetch metadata.
+
+* **Backend:** FastAPI + Uvicorn, serving a JSON API.
+* **Frontend:** plain HTML/CSS/JavaScript, served as static files.
+* **Database:** a single SQLite file (`db/otaku.db`), created automatically and empty on first run — the framework ships without any data, and you curate your own.
+* **Metadata:** AniList GraphQL (`https://graphql.anilist.co`) — public, no API key required. An internet connection is needed to fetch metadata.
 
 ---
 
@@ -152,3 +189,4 @@ The `data/`, `db/`, and `preview/` contents are yours; the rest is the framework
 ## 📜 License
 
 MIT — see [LICENSE](LICENSE). Use it, fork it, make it yours.
+
