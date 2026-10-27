@@ -65,9 +65,12 @@ const state = {
   musicCoverSet: false,
   musicLibrary: [],
   musicLibraryLetter: null,
+  navStack: [],
+  navIndex: -1,
 };
 
 let lastTrailerMsg = "";
+let peopleSearchTimer = null;
 
 // ---------------- helpers ----------------
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -233,7 +236,93 @@ function showView(name) {
   else window.scrollTo({ top: 0 });
 }
 
+// ---------------- navigation history (back button + scroll restore) ----------------
+let navSuppress = false;
+
+function scrollYNow() {
+  return window.scrollY || document.documentElement.scrollTop || 0;
+}
+
+function restoreScrollY(y) {
+  const target = Math.max(0, y || 0);
+  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, target)));
+}
+
+function navSaveScroll() {
+  const cur = state.navStack[state.navIndex];
+  if (cur) cur.scrollY = scrollYNow();
+}
+
+// Re-render a stored descriptor without recording it as a new history entry.
+async function navRender(desc) {
+  navSuppress = true;
+  try {
+    switch (desc.type) {
+      case "home": goHome(); break;
+      case "list":
+        state.filters = { ...state.filters, ...(desc.filters || {}) };
+        await loadMediaList();
+        break;
+      case "detail":
+        await openDetail(desc.id, false, { tab: desc.tab, fromNav: true });
+        break;
+      case "people":
+        await showPeopleListView({ filters: desc.filters, page: desc.page, fromNav: true });
+        break;
+      case "person":
+        await showPersonDetail(desc.id, { fromNav: true });
+        break;
+      case "franchises": await showFranchisesListView(); break;
+      case "franchise": await showFranchiseDetail(desc.id); break;
+      case "collections": await showCollectionsListView(); break;
+      case "collection": await showCollectionDetail(desc.id); break;
+      case "music": await showMusicListView(); break;
+    }
+  } finally {
+    navSuppress = false;
+  }
+  restoreScrollY(desc.scrollY);
+}
+
+function navRecord(desc) {
+  if (navSuppress) return;
+  navSaveScroll();
+  state.navStack = state.navStack.slice(0, state.navIndex + 1);
+  desc.scrollY = desc.scrollY || 0;
+  state.navStack.push(desc);
+  state.navIndex = state.navStack.length - 1;
+  try { history.pushState({ navPos: state.navIndex }, "", null); } catch (e) {}
+}
+
+// Replace the current entry (used when only filters/sort change in place).
+function navReplace(desc) {
+  if (navSuppress) return;
+  if (state.navIndex < 0) { navRecord(desc); return; }
+  desc.scrollY = desc.scrollY || 0;
+  state.navStack[state.navIndex] = desc;
+  try { history.replaceState({ navPos: state.navIndex }, "", null); } catch (e) {}
+}
+
+function navBack() {
+  if (state.navIndex > 0) history.back();
+  else goHome();
+}
+
+function navUpdateTab(tab) {
+  const cur = state.navStack[state.navIndex];
+  if (cur && cur.type === "detail") cur.tab = tab;
+}
+
+window.addEventListener("popstate", (e) => {
+  const pos = e.state && typeof e.state.navPos === "number" ? e.state.navPos : state.navIndex - 1;
+  if (pos < 0 || pos >= state.navStack.length) return;
+  navSaveScroll();
+  state.navIndex = pos;
+  navRender(state.navStack[pos]);
+});
+
 function goHome() {
+  if (state.view !== "homepage") navRecord({ type: "home" });
   closeDetail(false);
   showView("homepage");
   loadStats();
@@ -255,6 +344,8 @@ function getFilterParams() {
 
 async function loadMediaList() {
   const f = state.filters;
+  const navDesc = { type: "list", filters: { ...f }, scrollY: 0 };
+  if (state.view === "list-view") navReplace(navDesc); else navRecord(navDesc);
   showLoading(true);
   let title = "All Titles";
   if (f.q) title = `Search: "${f.q}"`;
@@ -624,15 +715,15 @@ async function deleteCurrentMedia() {
   try {
     await api("DELETE", `/api/media/${m.id}`);
     toast("Deleted");
-    closeDetail(false);
-    await loadStats();
-    if (state.view === "list-view") await loadMediaList();
-    else goHome();
+    navBack();
   } catch (e) { toast(e.message, true); }
 }
 
 // ---------------- detail view ----------------
-async function openDetail(id, force = false) {
+async function openDetail(id, force = false, opts = {}) {
+  if (!force && !opts.fromNav && !navSuppress) {
+    navRecord({ type: "detail", id, tab: "overview", scrollY: 0 });
+  }
   showLoading(true);
   try {
     const m = await api("GET", `/api/media/${id}`);
@@ -650,9 +741,9 @@ async function openDetail(id, force = false) {
     $("#list-view").classList.add("hidden");
     showView("detail-view");
     renderDetailSplash();
-    switchDetailTab("overview");
-    api("POST", `/api/media/${id}/view`).catch(() => {});
-    state.currentTab = "overview";
+    switchDetailTab(opts.tab || "overview");
+    if (!opts.fromNav) api("POST", `/api/media/${id}/view`).catch(() => {});
+    state.currentTab = opts.tab || "overview";
     await Promise.all([loadEntries(), loadCredits(), loadFranchiseTab()]);
     if (state.view === "homepage") {}
   } catch (e) {
@@ -1243,6 +1334,7 @@ function updateCardState() {
 
 function switchDetailTab(tab) {
   state.currentTab = tab;
+  navUpdateTab(tab);
   $$(".detail-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   ["overview", "entries", "cast", "franchise", "gallery", "music"].forEach((t) => $("#tab-" + t).classList.toggle("hidden", t !== tab));
   if (tab !== "overview") pauseTrailer();
@@ -1885,6 +1977,7 @@ function musicLetterKey(title) {
 }
 
 async function showMusicListView() {
+  if (state.view === "music-list-view") navReplace({ type: "music", scrollY: 0 }); else navRecord({ type: "music", scrollY: 0 });
   state.musicLibraryLetter = null;
   renderMusicAlphaIndex();
   try {
@@ -2034,15 +2127,18 @@ function portraitImgHTML(url, posX, posY, letter, cls = "person-portrait") {
 }
 
 function creditActionsHTML(id) {
-  return `<div class="person-actions">
+  return `<div class="person-actions" onclick="event.stopPropagation()">
     <button onclick="openCreditModal(${id})" title="Edit"><img class="icon-img-sm" src="ico/edit.svg" alt=""/></button>
     <button onclick="deleteCredit(${id})" title="Delete"><img class="icon-img-sm" src="ico/trash.svg" alt=""/></button>
   </div>`;
 }
 
 function staffCardHTML(c) {
+  const openAttr = c.person_id
+    ? ` class="person-card clickable" onclick="showPersonDetail(${c.person_id})" title="Open ${esc(c.name || "person")}"`
+    : ` class="person-card"`;
   return `
-  <div class="person-card">
+  <div${openAttr}>
     ${portraitImgHTML(c.image_url, c.image_pos_x, c.image_pos_y, c.name || "?")}
     <div class="person-card-body">
       <h4>${esc(c.name || "?")}</h4>
@@ -2060,6 +2156,9 @@ function castCardHTML(c) {
   const vaPosX = c.image_pos_x != null ? c.image_pos_x : c.va_pos_x;
   const vaPosY = c.image_pos_y != null ? c.image_pos_y : c.va_pos_y;
   const charImg = c.character_image || (c.va_image ? c.image_url : "");
+  const vaOpen = c.person_id
+    ? ` class="cast-tile clickable" onclick="showPersonDetail(${c.person_id})" title="Open ${esc(vaName || "person")}"`
+    : ` class="cast-tile"`;
   return `
   <div class="cast-couple">
     <div class="cast-tile">
@@ -2069,7 +2168,7 @@ function castCardHTML(c) {
         <p>Character</p>
       </div>
     </div>
-    <div class="cast-tile">
+    <div${vaOpen}>
       ${portraitImgHTML(vaImg, vaPosX, vaPosY, vaName || "?")}
       <div class="cast-tile-label">
         <h4>${esc(vaName || "?")}</h4>
@@ -2294,20 +2393,27 @@ async function deleteCredit(id) {
 // ---------------- people directory ----------------
 const PEOPLE_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "#"];
 
-async function showPeopleListView() {
-  state.peopleFilters = { q: "", letter: null, kind: "all", role: "" };
-  state.collabMode = false;
-  state.collabPicked = [];
-  state.collabPickedInfo = {};
-  state.collabTitles = [];
-  state.collabChars = false;
-  state.collabSharedChars = [];
-  state.peoplePage = 1;
-  state.peopleTotal = 0;
+async function showPeopleListView(opts = {}) {
+  if (opts.fromNav && opts.filters) {
+    state.peopleFilters = { ...opts.filters };
+    state.peoplePage = opts.page || 1;
+  } else {
+    state.peopleFilters = { q: "", letter: null, kind: "all", role: "" };
+    state.collabMode = false;
+    state.collabPicked = [];
+    state.collabPickedInfo = {};
+    state.collabTitles = [];
+    state.collabChars = false;
+    state.collabSharedChars = [];
+    state.peoplePage = 1;
+    state.peopleTotal = 0;
+  }
+  const desc = { type: "people", filters: { ...state.peopleFilters }, page: state.peoplePage, scrollY: 0 };
+  if (state.view === "people-list-view") navReplace(desc); else navRecord(desc);
   renderCollabPanel();
   renderPeopleAlphaIndex();
   const typeSel = $("#people-type-filter");
-  if (typeSel) typeSel.value = "all";
+  if (typeSel) typeSel.value = state.peopleFilters.kind || "all";
   await renderPeopleRoleOptions();
   await peopleLoad();
   showView("people-list-view");
@@ -2361,7 +2467,8 @@ function peopleSearch() {
   state.peopleFilters.letter = null;
   state.peoplePage = 1;
   renderPeopleAlphaIndex();
-  refreshPeopleList();
+  clearTimeout(peopleSearchTimer);
+  peopleSearchTimer = setTimeout(() => { refreshPeopleList(); }, 250);
 }
 
 function refreshPeopleList() {
@@ -2409,6 +2516,7 @@ async function peopleLoad() {
   state.peoplePageSize = res.page_size || PEOPLE_PAGE_SIZE;
   state.peopleById = {};
   people.forEach((p) => { state.peopleById[p.id] = p; });
+  if (state.view === "people-list-view") navReplace({ type: "people", filters: { ...state.peopleFilters }, page: state.peoplePage, scrollY: 0 });
   const grid = $("#people-grid");
   grid.innerHTML = people.length ? people.map((p) => personListCardHTML(p, state.collabMode)).join("") : `<p class="muted">No people found.</p>`;
   renderPeoplePagination("people");
@@ -2573,14 +2681,15 @@ function collabCharRowHTML(t) {
   </div>`;
 }
 
-async function showPersonDetail(id) {
+async function showPersonDetail(id, opts = {}) {
+  if (!opts.fromNav && !navSuppress) navRecord({ type: "person", id, scrollY: 0 });
   try { state.currentPerson = await api("GET", `/api/people/${id}`); }
   catch (e) { toast(e.message, true); return; }
   renderPersonDetail();
   showView("people-detail-view");
 }
 
-function backToPeople() { showPeopleListView(); }
+function backToPeople() { navBack(); }
 
 function renderPersonDetail() {
   const p = state.currentPerson;
@@ -2739,6 +2848,7 @@ function addCurrentToFranchise() {
 }
 
 async function showFranchisesListView() {
+  if (state.view === "franchises-list-view") navReplace({ type: "franchises", scrollY: 0 }); else navRecord({ type: "franchises", scrollY: 0 });
   try { state.franchises = await api("GET", "/api/franchises"); } catch (e) {}
   const grid = $("#franchises-grid");
   grid.innerHTML = state.franchises.length ? state.franchises.map(franchiseCardHTML).join("") : `<p class="muted">No franchises yet.</p>`;
@@ -2758,6 +2868,7 @@ function franchiseCardHTML(f) {
 }
 
 async function showFranchiseDetail(id) {
+  if (state.view === "franchise-detail-view") navReplace({ type: "franchise", id, scrollY: 0 }); else navRecord({ type: "franchise", id, scrollY: 0 });
   try { state.franchises = await api("GET", "/api/franchises"); } catch (e) {}
   state.currentFranchise = state.franchises.find((f) => f.id === id) || null;
   if (!state.currentFranchise) { toast("Franchise not found", true); return; }
@@ -2824,6 +2935,7 @@ async function addMediaToCurrentFranchise() {
 
 // ---------------- collections ----------------
 async function showCollectionsListView() {
+  if (state.view === "collections-list-view") navReplace({ type: "collections", scrollY: 0 }); else navRecord({ type: "collections", scrollY: 0 });
   try { state.collections = await api("GET", "/api/collections"); } catch (e) {}
   const grid = $("#collections-grid");
   grid.innerHTML = state.collections.length ? state.collections.map(collectionCardHTML).join("") : `<p class="muted">No collections yet.</p>`;
@@ -2843,6 +2955,7 @@ function collectionCardHTML(c) {
 }
 
 async function showCollectionDetail(id) {
+  if (state.view === "collection-detail-view") navReplace({ type: "collection", id, scrollY: 0 }); else navRecord({ type: "collection", id, scrollY: 0 });
   try { state.collections = await api("GET", "/api/collections"); } catch (e) {}
   state.currentCollection = state.collections.find((c) => c.id === id) || null;
   if (!state.currentCollection) { toast("Collection not found", true); return; }
@@ -3418,6 +3531,9 @@ function toggleBulkMode(el) { state.bulkMode = el.checked ? "missing" : "all"; }
 function updateBrowserUrl(path) { /* kept minimal */ }
 
 async function init() {
+  state.navStack = [{ type: "home", scrollY: 0 }];
+  state.navIndex = 0;
+  try { history.replaceState({ navPos: 0 }, "", null); } catch (e) {}
   try {
     $("#btn-add-media").addEventListener("click", openAddMediaModal);
     wireLightboxSwipe();

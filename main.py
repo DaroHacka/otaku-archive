@@ -170,6 +170,7 @@ def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -187,6 +188,13 @@ def _exec_write(cur, sql, params=(), retries: int = 3):
 
 def init_db():
     conn = get_conn()
+    # WAL keeps reads from blocking on writes and makes the app feel snappier
+    # on slow disks (Raspberry Pi). Ignored on filesystems that don't support it.
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
     cur = conn.cursor()
     cur.executescript(
         """
@@ -392,6 +400,13 @@ def run_migrations():
     ]:
         if col not in ccols:
             _exec_write(cur, f"ALTER TABLE credits ADD COLUMN {col} {decl}")
+    # Index the people <-> credits lookups used by the People directory and
+    # per-person counts. Without these, those queries scan the whole credits
+    # table for every person (seconds on a Pi).
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_credits_person ON credits(person_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_credits_vo ON credits(vo_actor_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_credits_kind_person ON credits(kind, person_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_credits_kind_vo ON credits(kind, vo_actor_id)")
     # Convert legacy AniList-style cast rows (character stored as its own "person"):
     # character info now lives on the credit row, and the credited person is the VA.
     legacy = cur.execute(
@@ -2425,8 +2440,8 @@ def _people_where_clause(conn, q, letter, kind, role, restrict_ids=None):
             params.append(f"{letter}%")
     if kind == "va":
         conds.append(
-            "EXISTS (SELECT 1 FROM credits c WHERE c.kind='cast'"
-            " AND (c.person_id = p.id OR c.vo_actor_id = p.id))"
+            "(EXISTS (SELECT 1 FROM credits c WHERE c.kind='cast' AND c.person_id = p.id)"
+            " OR EXISTS (SELECT 1 FROM credits c WHERE c.kind='cast' AND c.vo_actor_id = p.id))"
         )
     elif kind == "staff":
         conds.append(
@@ -2446,8 +2461,9 @@ _PEOPLE_CARD_COLUMNS = (
     "p.id, p.name, p.native_name, p.image_url, p.image_pos_x, p.image_pos_y, "
     "p.bio, p.birth_date, p.nationality, "
     "(SELECT COUNT(*) FROM credits c WHERE c.person_id = p.id AND c.kind='staff') AS staff_count, "
-    "(SELECT COUNT(DISTINCT c.id) FROM credits c WHERE c.kind='cast' "
-    " AND (c.person_id = p.id OR c.vo_actor_id = p.id)) AS cast_count "
+    "(SELECT COUNT(*) FROM credits c WHERE c.kind='cast' AND c.person_id = p.id) "
+    "+ (SELECT COUNT(*) FROM credits c WHERE c.kind='cast' AND c.vo_actor_id = p.id "
+    "AND (c.person_id IS NULL OR c.person_id <> p.id)) AS cast_count "
 )
 
 _SURNAME_SQL = (

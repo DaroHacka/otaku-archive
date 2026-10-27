@@ -566,6 +566,10 @@ input[type="color"] { padding: 4px; height: 44px; }
 .cast-tile .person-portrait { border-radius: 10px; }
 .cast-tile-label h4 { margin: 7px 0 1px; font-size: 0.82rem; line-height: 1.25; text-align: center; }
 .cast-tile-label p { margin: 0; color: var(--muted); font-size: 0.72rem; font-weight: 700; text-align: center; }
+.cast-tile.clickable, .person-card.clickable { cursor: pointer; }
+.cast-tile.clickable .person-portrait { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.cast-tile.clickable:hover .person-portrait { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
+.cast-tile.clickable:hover .cast-tile-label h4 { color: var(--accent-strong); }
 
 .section-head { display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px; }
 .section-head h3 { margin: 0; }

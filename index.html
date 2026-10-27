@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -228,7 +228,7 @@
         <section id="franchise-detail-view" class="hidden">
           <div class="section-header">
             <div style="display:flex; align-items:center; gap:12px;">
-              <button class="secondary" onclick="showFranchisesListView()">← Back</button>
+              <button class="secondary" onclick="navBack()">← Back</button>
               <h2 id="franchise-detail-title" style="margin:0;"></h2>
               <span class="count-badge" id="franchise-detail-count"></span>
             </div>
@@ -258,7 +258,7 @@
         <section id="collection-detail-view" class="hidden">
           <div class="section-header">
             <div style="display:flex; align-items:center; gap:12px;">
-              <button class="secondary" onclick="showCollectionsListView()">← Back</button>
+              <button class="secondary" onclick="navBack()">← Back</button>
               <h2 id="collection-detail-title" style="margin:0;"></h2>
               <span class="count-badge" id="collection-detail-count"></span>
             </div>
@@ -339,7 +339,7 @@
           <div class="detail-splash" id="detail-splash">
             <div class="detail-splash-shade"></div>
             <div class="detail-head">
-              <button class="secondary" id="btn-detail-back" onclick="closeDetail()">← Back</button>
+              <button class="secondary" id="btn-detail-back" onclick="navBack()">← Back</button>
               <div class="detail-head-actions">
                 <button class="secondary" onclick="openBannerLightbox()" title="View full banner">🖼 Banner</button>
                 <button class="secondary" id="btn-fetch-meta" onclick="fetchMetadataForCurrent()">✨ Fetch Metadata</button>
@@ -857,6 +857,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>
