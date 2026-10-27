@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=24" />
+  <link rel="stylesheet" href="style.css?v=25" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -155,6 +155,32 @@
             <div class="stat-chip clickable pastel-purple" id="stat-favorites" onclick="applyStatusFilter('favorite')"><span class="stat-number">0</span><span class="stat-label">Favorites</span></div>
             <div class="stat-chip clickable pastel-blue" id="stat-watching" onclick="applyStatusFilter('watching')"><span class="stat-number">0</span><span class="stat-label">Watching</span></div>
             <div class="stat-chip pastel-amber" id="stat-hours"><span class="stat-number">0</span><span class="stat-label">Hours Watched</span></div>
+          </div>
+
+          <div class="homepage-chart reveal" id="completion-chart-wrap">
+            <div class="chart-head">
+              <h3>📊 Finished Over Time</h3>
+              <div class="chart-controls">
+                <div class="chart-seg" id="completion-range">
+                  <button type="button" data-range="all" class="active" title="All time">All</button>
+                  <button type="button" data-range="5y" title="Last 5 years">5 Years</button>
+                  <button type="button" data-range="1y" title="Last year">1 Year</button>
+                  <button type="button" data-range="1m" title="Last month">1 Month</button>
+                  <button type="button" data-range="1w" title="Last week">1 Week</button>
+                </div>
+                <div class="chart-seg" id="completion-mode">
+                  <button type="button" data-mode="monthly" class="active" title="Monthly buckets">Monthly</button>
+                  <button type="button" data-mode="yearly" title="Yearly buckets">Yearly</button>
+                </div>
+                <div class="chart-seg" id="completion-category">
+                  <button type="button" data-category="all" class="active" title="Anime and manga together">All</button>
+                  <button type="button" data-category="anime" title="Anime only">Anime</button>
+                  <button type="button" data-category="manga" title="Manga only">Manga</button>
+                </div>
+              </div>
+            </div>
+            <div id="completion-chart"></div>
+            <p id="completion-undated" class="chart-hint hidden"></p>
           </div>
 
           <div class="homepage-section reveal">
@@ -358,6 +384,7 @@
                 <p id="detail-alt-titles" class="detail-alt"></p>
                 <div id="detail-meta-chips" class="detail-chips"></div>
                 <div id="detail-status-row" class="detail-status-row"></div>
+                <div id="detail-dates-row" class="detail-dates-row"></div>
                 <div id="detail-personal" class="detail-personal"></div>
               </div>
             </div>
@@ -387,6 +414,10 @@
             <div class="detail-notes-block">
               <h3>📝 My Notes</h3>
               <textarea id="detail-notes" rows="4" placeholder="Your personal notes about this title..." onchange="saveDetailNotes()" onblur="saveDetailNotes()"></textarea>
+            </div>
+            <div class="detail-notes-block hidden" id="detail-review-block">
+              <h3>💭 My Review</h3>
+              <textarea id="detail-review" rows="7" placeholder="Your thoughts, opinions, review or article about this title..." onchange="saveDetailReview()" onblur="saveDetailReview()"></textarea>
             </div>
           </div>
 
@@ -843,6 +874,34 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="modal-status-dates">
+    <div class="modal-content">
+      <h2 id="status-dates-title">Start watching</h2>
+      <p class="muted" id="status-dates-sub" style="margin-top:-6px;"></p>
+      <div class="status-date-grid">
+        <label>Start date <input type="date" id="status-start-date" /></label>
+        <label id="status-finish-label">Finish date <input type="date" id="status-finish-date" /></label>
+      </div>
+      <label id="status-review-label">My review (optional)
+        <textarea id="status-review" rows="7" placeholder="Write your thoughts, opinions, review or article..."></textarea>
+      </label>
+      <div class="modal-actions">
+        <button onclick="closeStatusDateModal()">Cancel</button>
+        <button onclick="saveStatusDates()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="modal-completed-titles">
+    <div class="modal-content">
+      <h2 id="completed-titles-title">Completed Titles</h2>
+      <div class="completed-titles-list" id="completed-titles-list"></div>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-completed-titles', false)">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- LIGHTBOX -->
   <div class="lightbox hidden" id="image-lightbox">
     <div class="lightbox-backdrop" onclick="closeLightbox()"></div>
@@ -857,6 +916,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

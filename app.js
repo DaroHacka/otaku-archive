@@ -71,6 +71,7 @@ const state = {
 
 let lastTrailerMsg = "";
 let peopleSearchTimer = null;
+let statusDateMode = null;
 
 // ---------------- helpers ----------------
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -566,7 +567,184 @@ async function loadStats() {
     fl.innerHTML = s.franchises.length
       ? s.franchises.map((f) => franchiseCardHTML(f)).join("")
       : `<p class="muted">No franchises yet.</p>`;
+
+    loadCompletionChart();
   } catch (e) {}
+}
+
+let completionChartRange = "all";
+let completionChartMode = "monthly";
+let completionChartCategory = "all";
+
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function todayISO() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatDisplayDate(iso) {
+  const s = String(iso || "").slice(0, 10);
+  const parts = s.split("-");
+  if (parts.length !== 3) return s;
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (!m || !d) return s;
+  return `${d} ${MONTH_SHORT[m - 1] || parts[1]} ${parts[0]}`;
+}
+
+function formatChartPeriod(period) {
+  if (!period) return "";
+  const parts = String(period).split("-");
+  if (parts.length === 1) return parts[0];
+  if (parts[1].startsWith("W")) return parts[1];
+  const m = parseInt(parts[1], 10);
+  if (parts.length === 2) return `${MONTH_SHORT[m - 1] || parts[1]} ${parts[0].slice(2)}`;
+  return `${parseInt(parts[2], 10)} ${MONTH_SHORT[m - 1] || parts[1]}`;
+}
+
+function formatChartPeriodLong(period) {
+  if (!period) return "";
+  const parts = String(period).split("-");
+  if (parts.length === 1) return parts[0];
+  if (parts[1].startsWith("W")) return `Week ${parseInt(parts[1].slice(1), 10)} ${parts[0]}`;
+  const m = parseInt(parts[1], 10);
+  if (parts.length === 2) return `${MONTH_LONG[m - 1] || parts[1]} ${parts[0]}`;
+  return `${parseInt(parts[2], 10)} ${MONTH_LONG[m - 1] || parts[1]} ${parts[0]}`;
+}
+
+function formatChartTooltip(period, count, item) {
+  const n = count === 1 ? "1 title" : `${count} titles`;
+  let extra = "";
+  if (item && completionChartCategory === "all" && item.anime && item.manga) {
+    extra = ` (${item.anime} anime, ${item.manga} manga)`;
+  }
+  return `${formatChartPeriodLong(period)}: ${n}${extra}`;
+}
+
+function completionBarColor() {
+  if (completionChartCategory === "anime") return "#ff5c8f";
+  if (completionChartCategory === "manga") return "#43b98d";
+  return "#9273e0";
+}
+
+async function loadCompletionChart() {
+  const container = $("#completion-chart");
+  if (!container) return;
+  const gran = completionChartMode === "yearly" ? "year" : "auto";
+  let data;
+  try {
+    data = await api("GET", `/api/stats/completion-timeline?range=${completionChartRange}&granularity=${gran}&category=${completionChartCategory}`);
+  } catch (e) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const hint = $("#completion-undated");
+  const undated = (data && data.undated) || { count: 0 };
+  if (hint) {
+    if (undated.count > 0) {
+      hint.classList.remove("hidden");
+      const noun = undated.count === 1 ? "title has" : "titles have";
+      hint.textContent = `${undated.count} completed ${noun} no finish date yet — open a title and use “Edit dates” to add one.`;
+    } else {
+      hint.classList.add("hidden");
+      hint.textContent = "";
+    }
+  }
+
+  const items = (data && data.items) || [];
+  const hasAny = items.some((i) => i.count > 0);
+  if (!items.length || !hasAny) {
+    container.innerHTML = `<p class="chart-empty">${completionChartRange === "all" ? "No finish dates recorded yet." : "No finish dates in this range."}</p>`;
+    return;
+  }
+
+  const resolvedGran = (data && data.granularity) || "month";
+  const maxCount = Math.max(...items.map((i) => i.count), 1);
+  const dense = items.length > 16;
+  const rotate = items.length > 18;
+  const barWidth = dense ? 16 : 26;
+  const gap = dense ? 6 : 10;
+  const chartHeight = 130;
+  const labelSpace = rotate ? 48 : 26;
+  const width = Math.max(items.length * (barWidth + gap) + gap, container.clientWidth || 0);
+  const height = chartHeight + labelSpace;
+  const fill = completionBarColor();
+
+  const bars = items.map((item, idx) => {
+    const barH = Math.round((item.count / maxCount) * (chartHeight - 20));
+    const x = gap + idx * (barWidth + gap);
+    const y = chartHeight - barH;
+    const label = formatChartPeriod(item.period);
+    const tip = formatChartTooltip(item.period, item.count, item);
+    const rect = item.count > 0
+      ? `<rect class="chart-bar" data-period="${item.period}" data-gran="${resolvedGran}" x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="3" fill="${fill}" opacity="0.85"><title>${tip}</title></rect>`
+      : `<rect x="${x}" y="${chartHeight - 1}" width="${barWidth}" height="1" fill="var(--border)"><title>${tip}</title></rect>`;
+    const countText = item.count > 0
+      ? `<text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="var(--muted)">${item.count}</text>`
+      : "";
+    const labelEl = rotate
+      ? `<text x="${x + barWidth / 2}" y="${chartHeight + 12}" text-anchor="end" font-size="9" fill="var(--muted)" transform="rotate(-45 ${x + barWidth / 2} ${chartHeight + 12})">${label}</text>`
+      : `<text x="${x + barWidth / 2}" y="${chartHeight + 16}" text-anchor="middle" font-size="9" fill="var(--muted)">${label}</text>`;
+    return rect + countText + labelEl;
+  }).join("");
+
+  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Titles finished over time">${bars}</svg>`;
+}
+
+function setupCompletionChartControls() {
+  const bind = (groupId, setter) => {
+    const group = $("#" + groupId);
+    if (!group) return;
+    group.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        group.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
+        setter(btn);
+        loadCompletionChart();
+      });
+    });
+  };
+  bind("completion-range", (btn) => { completionChartRange = btn.dataset.range; });
+  bind("completion-mode", (btn) => { completionChartMode = btn.dataset.mode; });
+  bind("completion-category", (btn) => { completionChartCategory = btn.dataset.category; });
+
+  const container = $("#completion-chart");
+  if (container) {
+    container.addEventListener("click", (e) => {
+      const bar = e.target.closest(".chart-bar");
+      if (!bar) return;
+      showCompletedForPeriod(bar.dataset.period, bar.dataset.gran || "month");
+    });
+  }
+}
+
+async function showCompletedForPeriod(period, gran) {
+  if (!period) return;
+  let items;
+  try {
+    items = await api("GET", `/api/stats/completed-titles?period=${encodeURIComponent(period)}&granularity=${encodeURIComponent(gran)}&category=${completionChartCategory}`);
+  } catch (e) {
+    toast("Failed to load completed titles", true);
+    return;
+  }
+  const list = $("#completed-titles-list");
+  $("#completed-titles-title").textContent = `Finished in ${formatChartPeriodLong(period)}`;
+  if (!items || !items.length) {
+    list.innerHTML = '<p class="muted">No titles in this period.</p>';
+  } else {
+    list.innerHTML = items.map((r) => `
+      <div class="completed-title-item" onclick="toggleModal('#modal-completed-titles', false); openDetail(${r.id})">
+        ${r.cover_url ? `<img src="${toAbs(r.cover_url)}" alt=""/>` : `<div class="completed-title-no-cover">${esc((r.title || "?").charAt(0))}</div>`}
+        <div class="completed-title-info">
+          <div class="completed-title-name">${esc(r.title)}</div>
+          <div class="completed-title-meta">${r.category === "manga" ? "Manga" : "Anime"}${r.started_at ? " · Started " + esc(formatDisplayDate(r.started_at)) : ""}${r.completed_at ? " · Finished " + esc(formatDisplayDate(r.completed_at)) : ""}</div>
+        </div>
+      </div>`).join("");
+  }
+  toggleModal("#modal-completed-titles", true);
 }
 
 function toggleGetStarted() {
@@ -820,6 +998,9 @@ function renderDetailSplash() {
     ${score ? `<span class="star-value">${score}/6</span>` : ""}
     <div style="flex:1"></div>`;
   $("#detail-notes").value = m.notes || "";
+  $("#detail-review").value = m.review || "";
+  $("#detail-review-block").classList.toggle("hidden", !(m.is_completed || (m.review || "").trim()));
+  renderDetailDates(m);
 
   $$(".detail-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === state.currentTab));
   syncOverviewRows();
@@ -1301,9 +1482,113 @@ async function pollTrailerStatus(id) {
 
 async function toggleStatus(key) {
   const m = state.currentMedia;
-  const body = { [key]: m[key] ? 0 : 1 };
+  if (!m) return;
+  const turningOn = !m[key];
+  if (turningOn && (key === "is_watching" || key === "is_completed")) {
+    openStatusDateModal(key === "is_completed" ? "completed" : "watching");
+    return;
+  }
+  const body = { [key]: turningOn ? 1 : 0 };
   await api("POST", `/api/media/${m.id}/status`, body);
   m[key] = body[key];
+  renderDetailSplash();
+  updateCardState();
+  loadStats();
+}
+
+function renderDetailDates(m) {
+  const row = $("#detail-dates-row");
+  if (!row) return;
+  const started = (m.started_at || "").trim();
+  const finished = (m.completed_at || "").trim();
+  const bits = [];
+  if (started) bits.push(`<span><strong>Started</strong> ${esc(formatDisplayDate(started))}</span>`);
+  if (finished) bits.push(`<span><strong>Finished</strong> ${esc(formatDisplayDate(finished))}</span>`);
+  const show = bits.length > 0 || m.is_watching || m.is_completed;
+  row.classList.toggle("hidden", !show);
+  if (!show) { row.innerHTML = ""; return; }
+  const editLabel = m.is_completed ? "Edit dates & review" : "Edit dates";
+  const text = bits.length
+    ? bits.join('<span class="date-sep">·</span>')
+    : '<span class="muted">No dates recorded yet</span>';
+  row.innerHTML = `${text}<button type="button" class="date-edit-btn" onclick="openStatusDateModal('edit')"><img class="icon-img-sm" src="ico/edit.svg" alt=""/> ${editLabel}</button>`;
+}
+
+function openStatusDateModal(mode) {
+  const m = state.currentMedia;
+  if (!m) return;
+  statusDateMode = mode;
+  const isManga = m.category === "manga";
+  const readWord = isManga ? "reading" : "watching";
+  const startEl = $("#status-start-date");
+  const finishEl = $("#status-finish-date");
+  const title = $("#status-dates-title");
+  const sub = $("#status-dates-sub");
+
+  const showFinish = mode === "completed" || (mode === "edit" && (!!m.is_completed || !!((m.completed_at || "").trim())));
+  const showReview = mode === "completed" || (mode === "edit" && (!!m.is_completed || !!((m.review || "").trim())));
+
+  title.textContent = mode === "watching"
+    ? `Start ${readWord}`
+    : mode === "completed"
+      ? "Mark as done"
+      : (m.is_completed ? "Edit dates & review" : "Edit dates");
+  sub.textContent = mode === "watching"
+    ? `When did you start ${readWord} this? You can leave it blank.`
+    : mode === "completed"
+      ? `Add the dates you ${isManga ? "read" : "watched"} it, plus any thoughts or a full review.`
+      : "Update the start and finish dates, and your review.";
+
+  startEl.value = (m.started_at || "").slice(0, 10);
+  finishEl.value = (m.completed_at || "").slice(0, 10);
+  if (mode === "watching" && !startEl.value) startEl.value = todayISO();
+  if (mode === "completed" && !finishEl.value) finishEl.value = todayISO();
+  finishEl.min = startEl.value || "";
+
+  $("#status-finish-label").classList.toggle("hidden", !showFinish);
+  $("#status-review-label").classList.toggle("hidden", !showReview);
+  $("#status-review").value = m.review || "";
+  toggleModal("#modal-status-dates", true);
+}
+
+function closeStatusDateModal() {
+  statusDateMode = null;
+  toggleModal("#modal-status-dates", false);
+}
+
+async function saveStatusDates() {
+  const m = state.currentMedia;
+  if (!m) return;
+  const mode = statusDateMode;
+  const started = ($("#status-start-date").value || "").trim();
+  const finished = ($("#status-finish-date").value || "").trim();
+  const review = ($("#status-review").value || "").trim();
+  const showFinish = mode === "completed" || (mode === "edit" && (!!m.is_completed || !!((m.completed_at || "").trim())));
+  if (showFinish && started && finished && finished < started) {
+    toast("Finish date can't be before the start date.", true);
+    return;
+  }
+  const body = { started_at: started || null };
+  if (showFinish) body.completed_at = finished || null;
+  if (mode === "watching") {
+    body.is_watching = 1;
+    body.is_completed = 0;
+    body.is_on_hold = 0;
+  } else if (mode === "completed") {
+    body.is_completed = 1;
+    body.is_watching = 0;
+    body.is_on_hold = 0;
+    body.review = review;
+  } else {
+    body.review = review;
+  }
+  try {
+    await api("POST", `/api/media/${m.id}/status`, body);
+  } catch (e) {
+    return;
+  }
+  Object.assign(m, body);
+  closeStatusDateModal();
   renderDetailSplash();
   updateCardState();
   loadStats();
@@ -1325,6 +1610,14 @@ async function saveDetailNotes() {
   const v = $("#detail-notes").value;
   await api("POST", `/api/media/${state.currentMedia.id}/status`, { notes: v });
   state.currentMedia.notes = v;
+}
+
+async function saveDetailReview() {
+  if (!state.currentMedia) return;
+  const v = $("#detail-review").value;
+  await api("POST", `/api/media/${state.currentMedia.id}/status`, { review: v });
+  state.currentMedia.review = v;
+  $("#detail-review-block").classList.toggle("hidden", !(state.currentMedia.is_completed || v.trim()));
 }
 
 function updateCardState() {
@@ -3539,6 +3832,7 @@ async function init() {
     wireLightboxSwipe();
     await initSettings();
     wirePersonAutos();
+    setupCompletionChartControls();
     await Promise.all([loadStats(), loadFacets()]);
     try { state.allMediaOptions = await api("GET", "/api/media?sort=title&per_page=500"); } catch (e) { state.allMediaOptions = []; }
     if (!state.allMediaOptions.length) state.allMediaOptions = state.listMedia;

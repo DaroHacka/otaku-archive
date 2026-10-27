@@ -9,6 +9,7 @@ import threading
 import time
 import unicodedata
 from collections import Counter
+from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -238,6 +239,7 @@ def init_db():
             personal_score REAL,
             started_at TEXT,
             completed_at TEXT,
+            review TEXT DEFAULT '',
             notes TEXT DEFAULT '',
             FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
         );
@@ -356,6 +358,14 @@ def run_migrations():
     ]:
         if col not in cols:
             _exec_write(cur, f"ALTER TABLE media ADD COLUMN {col} {decl}")
+    scols = {r["name"] for r in cur.execute("PRAGMA table_info(media_status)").fetchall()}
+    for col, decl in [
+        ("started_at", "TEXT"),
+        ("completed_at", "TEXT"),
+        ("review", "TEXT DEFAULT ''"),
+    ]:
+        if col not in scols:
+            _exec_write(cur, f"ALTER TABLE media_status ADD COLUMN {col} {decl}")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS media_images (
@@ -549,6 +559,7 @@ class MediaDetail(MediaListItem):
     season_episodes: List[int] = []
     started_at: Optional[str]
     completed_at: Optional[str]
+    review: str
     notes: str
     created_at: str
     updated_at: str
@@ -585,6 +596,7 @@ class StatusUpdate(BaseModel):
     personal_score: Optional[float] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    review: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -1715,6 +1727,7 @@ def get_media_detail(media_id: int):
             "season_episodes": _decode_seasons(row["season_episodes"]),
             "started_at": row["started_at"],
             "completed_at": row["completed_at"],
+            "review": row["review"] or "",
             "notes": row["notes"] or "",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -3266,6 +3279,192 @@ def get_stats():
         "last_added": [dict(r) for r in last_added],
         "franchises": franchises,
     }
+
+
+def _completion_category_filter(category: str) -> str:
+    c = (category or "all").lower()
+    return c if c in ("all", "anime", "manga") else "all"
+
+
+def _completed_in_period(completed_at, period, granularity):
+    ca = str(completed_at or "")
+    if not ca:
+        return False
+    if granularity == "year":
+        if not re.fullmatch(r"\d{4}", period or ""):
+            raise HTTPException(status_code=400, detail="Invalid period for granularity=year")
+        return ca[:4] == period
+    if granularity == "month":
+        if not re.fullmatch(r"\d{4}-\d{2}", period or ""):
+            raise HTTPException(status_code=400, detail="Invalid period for granularity=month")
+        return ca[:7] == period
+    if granularity == "day":
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", period or ""):
+            raise HTTPException(status_code=400, detail="Invalid period for granularity=day")
+        return ca[:10] == period
+    if granularity == "week":
+        m = re.fullmatch(r"(\d{4})-W(\d{2})", period or "")
+        if not m:
+            raise HTTPException(status_code=400, detail="Invalid period for granularity=week")
+        try:
+            start = date.fromisocalendar(int(m.group(1)), int(m.group(2)), 1)
+            d = date.fromisoformat(ca[:10])
+        except ValueError:
+            return False
+        return start <= d <= start + timedelta(days=6)
+    raise HTTPException(status_code=400, detail="Invalid granularity")
+
+
+@app.get("/api/stats/completion-timeline")
+def get_completion_timeline(range: str = "all", granularity: str = "auto", category: str = "all"):
+    try:
+        rng = (range or "all").lower()
+        gran = (granularity or "auto").lower()
+        cat = _completion_category_filter(category)
+        if gran not in ("auto", "day", "week", "month", "year"):
+            gran = "auto"
+
+        today = date.today()
+        deltas = {
+            "1w": timedelta(days=6),
+            "1m": timedelta(days=29),
+            "1y": timedelta(days=364),
+            "5y": timedelta(days=1826),
+        }
+        from_date = (today - deltas[rng]) if rng in deltas else None
+        if gran == "auto":
+            gran = {"1m": "week", "1w": "day"}.get(rng, "month")
+
+        conn = get_conn()
+        sql = (
+            "SELECT ms.completed_at, m.category FROM media_status ms "
+            "JOIN media m ON m.id = ms.media_id WHERE ms.is_completed = 1"
+        )
+        params = []
+        if cat != "all":
+            sql += " AND m.category = ?"
+            params.append(cat)
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+
+        counts = {}
+        anime_counts = {}
+        manga_counts = {}
+        undated = {"count": 0, "anime": 0, "manga": 0}
+
+        def period_of(ca):
+            ca = str(ca)
+            if len(ca) < 10:
+                return None
+            if gran == "year":
+                return ca[:4] if ca[:4].isdigit() else None
+            if gran == "month":
+                return ca[:7]
+            if gran == "day":
+                return ca[:10]
+            try:
+                y, w, _ = date.fromisoformat(ca[:10]).isocalendar()
+                return "%d-W%02d" % (y, w)
+            except ValueError:
+                return None
+
+        for r in rows:
+            ca = (r["completed_at"] or "").strip()
+            if not ca:
+                undated["count"] += 1
+                undated[r["category"]] = undated.get(r["category"], 0) + 1
+                continue
+            try:
+                d = date.fromisoformat(ca[:10])
+            except ValueError:
+                undated["count"] += 1
+                undated[r["category"]] = undated.get(r["category"], 0) + 1
+                continue
+            if from_date and d < from_date:
+                continue
+            p = period_of(ca)
+            if not p:
+                continue
+            counts[p] = counts.get(p, 0) + 1
+            if r["category"] == "manga":
+                manga_counts[p] = manga_counts.get(p, 0) + 1
+            else:
+                anime_counts[p] = anime_counts.get(p, 0) + 1
+
+        periods = set(counts)
+        if from_date:
+            if gran == "day":
+                d = from_date
+                while d <= today:
+                    periods.add(d.isoformat())
+                    d += timedelta(days=1)
+            elif gran == "week":
+                d = from_date
+                while d <= today:
+                    y, w, _ = d.isocalendar()
+                    periods.add("%d-W%02d" % (y, w))
+                    d += timedelta(days=1)
+            elif gran == "month":
+                y, m = from_date.year, from_date.month
+                while (y, m) <= (today.year, today.month):
+                    periods.add("%04d-%02d" % (y, m))
+                    y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+            else:  # year
+                y = from_date.year
+                while y <= today.year:
+                    periods.add(str(y))
+                    y += 1
+
+        ordered = sorted(periods)
+        return {
+            "granularity": gran,
+            "range": rng,
+            "category": cat,
+            "items": [
+                {
+                    "period": p,
+                    "count": counts.get(p, 0),
+                    "anime": anime_counts.get(p, 0),
+                    "manga": manga_counts.get(p, 0),
+                }
+                for p in ordered
+            ],
+            "undated": undated,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build completion timeline: {e}")
+
+
+@app.get("/api/stats/completed-titles")
+def get_completed_media(
+    period: Optional[str] = None,
+    granularity: Optional[str] = None,
+    category: str = "all",
+):
+    cat = _completion_category_filter(category)
+    conn = get_conn()
+    sql = (
+        "SELECT m.id, m.title, m.category, m.type, m.season_year, m.cover_url, "
+        "ms.started_at, ms.completed_at FROM media m "
+        "JOIN media_status ms ON ms.media_id = m.id WHERE ms.is_completed = 1"
+    )
+    params = []
+    if cat != "all":
+        sql += " AND m.category = ?"
+        params.append(cat)
+    sql += " ORDER BY ms.completed_at DESC, lower(m.title) COLLATE NOCASE"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    items = [dict(r) for r in rows]
+    if period:
+        gran = (granularity or "month").lower()
+        if gran not in ("year", "month", "week", "day"):
+            raise HTTPException(status_code=400, detail="Invalid granularity")
+        items = [r for r in items if _completed_in_period(r["completed_at"], period, gran)]
+    return items
 
 
 # ---------------------------------------------------------------------------
