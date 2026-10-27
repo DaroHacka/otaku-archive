@@ -926,7 +926,7 @@ label input, label textarea, label select { margin-top: 6px; font-weight: 500; }
   .sidebar-backdrop.open { display: block; }
   .header-right #btn-home { display: none; }
   .detail-main { flex-direction: column; align-items: center; text-align: center; }
-  .detail-info .detail-chips, .detail-info .detail-status-row, .detail-info .detail-personal { justify-content: center; }
+  .detail-info .detail-chips, .detail-info .detail-status-row, .detail-info .detail-dates-row, .detail-info .detail-personal { justify-content: center; }
   .detail-head { flex-direction: column; gap: 10px; align-items: flex-start; }
   h1#homepage-title { font-size: 2rem; }
   .overview-row { flex-direction: column; }
