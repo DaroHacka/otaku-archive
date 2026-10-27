@@ -1536,7 +1536,7 @@ function openStatusDateModal(mode) {
   sub.textContent = mode === "watching"
     ? `When did you start ${readWord} this? You can leave it blank.`
     : mode === "completed"
-      ? `Add the dates you ${isManga ? "read" : "watched"} it, plus any thoughts or a full review.`
+      ? `Add the dates you ${isManga ? "read" : "watched"} it, plus any thoughts or a full review. All ${isManga ? "chapters" : "episodes"} will be marked as seen.`
       : "Update the start and finish dates, and your review.";
 
   startEl.value = (m.started_at || "").slice(0, 10);
@@ -1588,6 +1588,13 @@ async function saveStatusDates() {
     return;
   }
   Object.assign(m, body);
+  if (mode === "completed") {
+    const loaded = await loadEntries();
+    if (loaded) {
+      m.total_entries = state.entries.length;
+      m.done_count = state.entries.filter((e) => e.is_done).length;
+    }
+  }
   closeStatusDateModal();
   renderDetailSplash();
   updateCardState();
@@ -1791,10 +1798,12 @@ function finalizeBulk() {
 
 // ---------------- entries ----------------
 async function loadEntries() {
-  if (!state.currentMedia) return;
+  if (!state.currentMedia) return false;
+  let loaded = true;
   try { state.entries = await api("GET", `/api/media/${state.currentMedia.id}/entries`); }
-  catch (e) { state.entries = []; }
+  catch (e) { state.entries = []; loaded = false; }
   renderEntries();
+  return loaded;
 }
 
 function allEntriesDone() {

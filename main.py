@@ -1874,27 +1874,38 @@ def delete_media(media_id: int):
 def update_status(media_id: int, data: StatusUpdate):
     conn = get_conn()
     cur = conn.cursor()
-    row = conn.execute("SELECT id FROM media WHERE id = ?", (media_id,)).fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Title not found")
-    existing = conn.execute("SELECT id FROM media_status WHERE media_id=?", (media_id,)).fetchone()
-    if not existing:
-        _exec_write(cur, "INSERT INTO media_status (media_id) VALUES (?)", (media_id,))
-    fields = []
-    params = []
-    nullable = {"personal_score", "started_at", "completed_at"}
-    for k, v in data.model_dump(exclude_unset=True).items():
-        if v is None and k not in nullable:
-            continue
-        fields.append(f"{k} = ?")
-        params.append(v)
-    if fields:
-        params.append(media_id)
-        _exec_write(cur, f"UPDATE media_status SET {', '.join(fields)} WHERE media_id=?", params)
+    try:
+        row = conn.execute("SELECT id FROM media WHERE id = ?", (media_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Title not found")
+        existing = conn.execute("SELECT id FROM media_status WHERE media_id=?", (media_id,)).fetchone()
+        if not existing:
+            _exec_write(cur, "INSERT INTO media_status (media_id) VALUES (?)", (media_id,))
+        fields = []
+        params = []
+        nullable = {"personal_score", "started_at", "completed_at"}
+        for k, v in data.model_dump(exclude_unset=True).items():
+            if v is None and k not in nullable:
+                continue
+            fields.append(f"{k} = ?")
+            params.append(v)
+        if fields:
+            params.append(media_id)
+            _exec_write(cur, f"UPDATE media_status SET {', '.join(fields)} WHERE media_id=?", params)
+        if data.is_completed == 1:
+            seed_entries_for_media(conn, media_id)
+            _exec_write(
+                cur,
+                "UPDATE entries SET is_done=1, done_at=COALESCE(NULLIF(done_at,''), ?) WHERE media_id=?",
+                (time.strftime("%Y-%m-%d %H:%M:%S"), media_id),
+            )
         conn.commit()
-    conn.close()
-    return {"id": media_id}
+        return {"id": media_id}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 @app.post("/api/media/{media_id}/view")
