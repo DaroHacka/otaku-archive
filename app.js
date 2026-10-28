@@ -1115,6 +1115,20 @@ function insertFormat(id, before, after) {
   ta.selectionEnd = ns + sel.length;
 }
 
+function cleanDescriptionText(text) {
+  let t = String(text || "").replace(/\r\n/g, "\n");
+  const ta = document.createElement("textarea");
+  for (let i = 0; i < 2; i++) {
+    ta.innerHTML = t;
+    t = ta.value;
+  }
+  t = t.replace(/<br\s*\/?>/gi, "\n");
+  t = t.replace(/<\/p\s*>/gi, "\n\n").replace(/<p[^>]*>/gi, "");
+  t = t.replace(/<\/div\s*>/gi, "\n").replace(/<div[^>]*>/gi, "");
+  t = t.replace(/<\/?[a-z][^>]*>/gi, "");
+  return t.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 function mdInline(text) {
   let t = esc(text || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
   t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -1127,7 +1141,7 @@ function renderDescription(md) {
   if (!wrap) return;
   descBlocks = [];
   descPage = 1;
-  const raw = (md || "").trim();
+  const raw = cleanDescriptionText(md).trim();
   if (raw) {
     for (const part of raw.split(/\n{2,}/)) {
       const p = document.createElement("p");
@@ -1700,6 +1714,7 @@ function updateCardState() {
 
 function switchDetailTab(tab) {
   state.currentTab = tab;
+  closeEntriesMenu();
   navUpdateTab(tab);
   $$(".detail-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   ["overview", "entries", "cast", "franchise", "gallery", "music"].forEach((t) => $("#tab-" + t).classList.toggle("hidden", t !== tab));
@@ -2048,6 +2063,8 @@ async function savePastedTitles() {
 let entryNoteId = null;
 state.entriesTitleEditMode = false;
 state.entriesNotesExpanded = {};
+state.entriesNotesPage = {};
+state.entriesNotesPages = {};
 
 function openEntryNote(id) {
   const e = state.entries.find((x) => x.id === id);
@@ -2079,6 +2096,11 @@ function hasNote(e) {
 
 function toggleNotesFilter() {
   state.entriesNotesFilter = !state.entriesNotesFilter;
+  if (!state.entriesNotesFilter) {
+    state.entriesNotesExpanded = {};
+    state.entriesNotesPage = {};
+    state.entriesNotesPages = {};
+  }
   renderEntries();
 }
 
@@ -2090,6 +2112,32 @@ function toggleEntriesTitleEdit() {
   if (pasteBtn) pasteBtn.classList.toggle("hidden", !state.entriesTitleEditMode);
   renderEntries();
 }
+
+function closeEntriesMenu() {
+  const menu = $("#entries-more-menu");
+  const btn = $("#btn-entries-more");
+  if (menu) menu.classList.add("hidden");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleEntriesMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const menu = $("#entries-more-menu");
+  const btn = $("#btn-entries-more");
+  if (!menu || !btn) return;
+  const open = menu.classList.contains("hidden");
+  menu.classList.toggle("hidden", !open);
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+document.addEventListener("click", (ev) => {
+  const wrap = ev.target && ev.target.closest ? ev.target.closest(".entries-more-wrap") : null;
+  if (!wrap) closeEntriesMenu();
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closeEntriesMenu();
+});
 
 function notePreviewWords(text, maxWords = 30) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -2111,25 +2159,130 @@ function renderNotesList() {
   const kind = m.category === "manga" ? "ch" : "ep";
   list.innerHTML = `<div class="notes-filter-list">${notes.map((e) => {
     const full = e.notes || "";
-    const expanded = !!(state.entriesNotesExpanded && state.entriesNotesExpanded[e.id]);
-    const wordCount = String(full).trim().split(/\s+/).filter(Boolean).length;
-    const isLong = wordCount > 30;
+    const plain = String(full).trim();
+    const wordCount = plain.split(/\s+/).filter(Boolean).length;
+    const isLong = wordCount > 16 || plain.length > 110;
+    const expanded = isLong && !!(state.entriesNotesExpanded && state.entriesNotesExpanded[e.id]);
     const preview = notePreviewWords(full, 30);
     const meta = `${kind}${e.number}${e.title ? ` · ${esc(e.title)}` : ""}`;
-    return `<div class="note-card ${expanded ? "expanded" : ""}" data-id="${e.id}">
-      <div class="note-card-header">
-        <div class="note-card-meta" title="${esc(e.title || "")}">${meta}</div>
-        <div class="note-card-actions">
-          ${isLong ? `<button class="note-expand-btn" onclick="toggleEntryNoteExpand(${e.id}, event)">${expanded ? "Show less" : "Show more"}</button>` : ""}
-          <button class="note-edit-btn" title="Edit note" onclick="openEntryNote(${e.id}); event.stopPropagation();">Edit</button>
+    return `<div class="note-slot ${expanded ? "expanded" : ""}">
+      <div class="note-card ${expanded ? "expanded" : ""}" data-id="${e.id}">
+        <div class="note-card-header">
+          <div class="note-card-meta" title="${esc(e.title || "")}">${meta}</div>
+          <div class="note-card-actions">
+            ${isLong ? `<button class="note-expand-btn" onclick="toggleEntryNoteExpand(${e.id}, event)">${expanded ? "Show less" : "Show more"}</button>` : ""}
+            <button class="note-edit-btn" title="Edit note" onclick="openEntryNote(${e.id}); event.stopPropagation();">Edit</button>
+          </div>
         </div>
+        ${isLong
+          ? `<div class="note-preview" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(preview)}</div>
+             <div class="note-full" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(full).replace(/\n/g, "<br/>")}</div>
+             <div class="note-zoom-footer hidden">
+               <button class="note-page-btn" data-dir="-1" onclick="changeNotePage(${e.id}, -1, event)" aria-label="Previous page">‹</button>
+               <span class="note-page-indicator">1/1</span>
+               <button class="note-page-btn" data-dir="1" onclick="changeNotePage(${e.id}, 1, event)" aria-label="Next page">›</button>
+             </div>`
+          : `<div class="note-text">${esc(full).replace(/\n/g, "<br/>")}</div>`}
       </div>
-      ${isLong
-        ? `<div class="note-preview" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(preview)}</div>
-           <div class="note-full" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(full).replace(/\n/g, "<br/>")}</div>`
-        : `<div class="note-text">${esc(full).replace(/\n/g, "<br/>")}</div>`}
     </div>`;
   }).join("")}</div>`;
+  hydrateExpandedNoteCards(notes);
+}
+
+function noteTextTokens(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n");
+  const tokens = [];
+  normalized.split("\n").forEach((line, index) => {
+    if (index > 0) tokens.push("\n");
+    line.trim().split(/\s+/).filter(Boolean).forEach((word) => tokens.push(word));
+  });
+  return tokens;
+}
+
+function joinNoteTokens(tokens) {
+  let out = "";
+  tokens.forEach((tok) => {
+    if (tok === "\n") { out += "\n"; return; }
+    if (out && !out.endsWith("\n") && !out.endsWith(" ")) out += " ";
+    out += tok;
+  });
+  return out;
+}
+
+function paginateNoteText(text, width, height, host) {
+  const tokens = noteTextTokens(text);
+  if (!tokens.length || width <= 0 || height <= 0) return [String(text || "")];
+  const meas = document.createElement("div");
+  meas.className = "note-page-measure";
+  meas.style.width = Math.max(1, Math.floor(width)) + "px";
+  meas.style.height = Math.max(1, Math.floor(height)) + "px";
+  host.appendChild(meas);
+  const pages = [];
+  let start = 0;
+  while (start < tokens.length) {
+    while (start < tokens.length && tokens[start] === "\n") start++;
+    if (start >= tokens.length) break;
+    let lo = 1;
+    let hi = tokens.length - start;
+    let best = 1;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      meas.textContent = joinNoteTokens(tokens.slice(start, start + mid));
+      if (meas.scrollHeight <= meas.clientHeight + 1) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    pages.push(joinNoteTokens(tokens.slice(start, start + best)).trim());
+    start += best;
+  }
+  meas.remove();
+  return pages.length ? pages : [String(text || "")];
+}
+
+function applyNotePage(card, pages, page) {
+  const fullEl = card.querySelector(".note-full");
+  if (fullEl) fullEl.textContent = pages[page] || "";
+  const footer = card.querySelector(".note-zoom-footer");
+  if (footer) footer.classList.toggle("hidden", pages.length <= 1);
+  const indicator = card.querySelector(".note-page-indicator");
+  if (indicator) indicator.textContent = `${page + 1}/${pages.length}`;
+  const prev = card.querySelector(".note-page-btn[data-dir='-1']");
+  const next = card.querySelector(".note-page-btn[data-dir='1']");
+  if (prev) prev.disabled = page <= 0;
+  if (next) next.disabled = page >= pages.length - 1;
+}
+
+function hydrateExpandedNoteCards(notes) {
+  if (!document.body.classList.contains("entries-notebook")) return;
+  if (!state.entriesNotesPages) state.entriesNotesPages = {};
+  if (!state.entriesNotesPage) state.entriesNotesPage = {};
+  $$(".note-card.expanded").forEach((card) => {
+    const id = parseInt(card.getAttribute("data-id"), 10);
+    const e = (notes || []).find((x) => x.id === id);
+    if (!e) return;
+    const fullEl = card.querySelector(".note-full");
+    if (!fullEl) return;
+    const pages = paginateNoteText(e.notes || "", fullEl.clientWidth, fullEl.clientHeight, card);
+    state.entriesNotesPages[id] = pages;
+    const page = Math.max(0, Math.min(state.entriesNotesPage[id] || 0, pages.length - 1));
+    state.entriesNotesPage[id] = page;
+    applyNotePage(card, pages, page);
+  });
+}
+
+function changeNotePage(id, delta, ev) {
+  if (ev) ev.stopPropagation();
+  const pages = (state.entriesNotesPages || {})[id];
+  if (!pages || !pages.length) return;
+  const cur = state.entriesNotesPage[id] || 0;
+  const next = Math.max(0, Math.min(pages.length - 1, cur + delta));
+  if (next === cur) return;
+  state.entriesNotesPage[id] = next;
+  const card = document.querySelector(`.note-card[data-id="${id}"]`);
+  if (card) applyNotePage(card, pages, next);
 }
 
 function toggleEntryNoteExpand(id, ev) {
@@ -2137,7 +2290,20 @@ function toggleEntryNoteExpand(id, ev) {
   const t = ev.target;
   if (t && t.closest(".note-edit-btn")) return;
   if (!state.entriesNotesExpanded) state.entriesNotesExpanded = {};
-  state.entriesNotesExpanded[id] = !state.entriesNotesExpanded[id];
+  if (!state.entriesNotesPage) state.entriesNotesPage = {};
+  if (!state.entriesNotesPages) state.entriesNotesPages = {};
+  const opening = !state.entriesNotesExpanded[id];
+  if (opening) {
+    state.entriesNotesExpanded = {};
+    state.entriesNotesExpanded[id] = true;
+    state.entriesNotesPage = {};
+    state.entriesNotesPage[id] = 0;
+    state.entriesNotesPages = {};
+  } else {
+    delete state.entriesNotesExpanded[id];
+    delete state.entriesNotesPage[id];
+    delete state.entriesNotesPages[id];
+  }
   renderEntries();
 }
 
@@ -3362,7 +3528,7 @@ function renderFranchiseTab() {
   } else {
     box.innerHTML = `
       <h3>${esc(f.name)}</h3>
-      <p class="muted" style="margin-top:4px;">${esc(f.description || "")}</p>
+      <p class="muted" style="margin-top:4px;">${esc(cleanDescriptionText(f.description || ""))}</p>
       <div class="media-grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;">
         ${f.media.map((m) => `<div class="media-card" onclick="openDetail(${m.id})"><div class="card-cover-wrap">
           ${m.cover_url ? `<img class="card-cover" src="${toAbs(m.cover_url)}"/>` : placeholderCardHTML(m.title)}
@@ -3398,7 +3564,7 @@ function franchiseCardHTML(f) {
   <div class="franchise-card" onclick="showFranchiseDetail(${f.id})">
     <div class="fc-cover-wrap">${cover}</div>
     <h3>🔗 ${esc(f.name)}</h3>
-    <p>${f.count} titles · ${esc(f.description || "")}</p>
+    <p>${f.count} titles · ${esc(cleanDescriptionText(f.description || ""))}</p>
   </div>`;
 }
 
@@ -3409,7 +3575,7 @@ async function showFranchiseDetail(id) {
   if (!state.currentFranchise) { toast("Franchise not found", true); return; }
   $("#franchise-detail-title").textContent = state.currentFranchise.name;
   $("#franchise-detail-count").textContent = state.currentFranchise.count + " titles";
-  $("#franchise-detail-desc").textContent = state.currentFranchise.description || "";
+  $("#franchise-detail-desc").textContent = cleanDescriptionText(state.currentFranchise.description || "");
   const sel = $("#franchise-add-select");
   sel.innerHTML = '<option value="">Add a title to this franchise...</option>';
   state.allMediaOptions.forEach((m) => {
@@ -3485,7 +3651,7 @@ function collectionCardHTML(c) {
   <div class="collection-card" onclick="showCollectionDetail(${c.id})">
     <div class="fc-cover-wrap">${cover}</div>
     <h3>⭐ ${esc(c.name)}</h3>
-    <p>${c.count} titles · ${esc(c.description || "")}</p>
+    <p>${c.count} titles · ${esc(cleanDescriptionText(c.description || ""))}</p>
   </div>`;
 }
 
@@ -3496,7 +3662,7 @@ async function showCollectionDetail(id) {
   if (!state.currentCollection) { toast("Collection not found", true); return; }
   $("#collection-detail-title").textContent = state.currentCollection.name;
   $("#collection-detail-count").textContent = state.currentCollection.count + " titles";
-  $("#collection-detail-desc").textContent = state.currentCollection.description || "";
+  $("#collection-detail-desc").textContent = cleanDescriptionText(state.currentCollection.description || "");
   const sel = $("#collection-add-select");
   sel.innerHTML = '<option value="">Add a title to this collection...</option>';
   state.allMediaOptions.forEach((m) => {
@@ -3854,8 +4020,13 @@ function closeLightbox() {
 let savedHeader = "";
 let musicAutoplayPref = true;
 let entriesTheme = "grid";
+let overviewTheme = "classic";
+let overviewNoteSize = 360;
 let stickyNoteColor = "#fff3a3";
 let stickyNoteMode = "single";
+const OVERVIEW_NOTE_MIN = 220;
+const OVERVIEW_NOTE_MAX = 560;
+const OVERVIEW_NOTE_DEFAULT = 360;
 const STICKY_PASTELS = ["#fff3a3", "#ffd6e7", "#d9ecff", "#dff5d8", "#ecdfff", "#ffe2c7"];
 
 async function openSettingsModal() {
@@ -3868,11 +4039,14 @@ async function openSettingsModal() {
     $("#settings-bg").value = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#fbf3fa";
     $("#settings-music-autoplay").checked = musicAutoplayPref;
     $("#settings-entries-theme").value = s.settings.entries_theme || "grid";
+    $("#settings-overview-theme").value = s.settings.overview_theme || "classic";
+    $("#settings-overview-note-size").value = s.settings.overview_note_size || String(OVERVIEW_NOTE_DEFAULT);
     $("#settings-sticky-mode").value = s.settings.sticky_note_mode || "single";
     $("#settings-sticky-color").value = s.settings.sticky_note_color || "#fff3a3";
     savedHeader = s.settings.header_url || "";
   } catch (e) {}
   updateStickySettingsUI();
+  updateOverviewSettingsUI();
   renderHeaderGallery();
   toggleModal("#modal-settings", true);
 }
@@ -3891,13 +4065,19 @@ async function saveSettings() {
   musicAutoplayPref = !!$("#settings-music-autoplay").checked;
   await api("PUT", "/api/settings/pref/music_autoplay", { value: musicAutoplayPref ? "1" : "0" }).catch(() => {});
   const themeValue = $("#settings-entries-theme").value;
+  const overviewThemeValue = $("#settings-overview-theme").value;
+  const overviewSizeValue = parseInt($("#settings-overview-note-size").value, 10) || OVERVIEW_NOTE_DEFAULT;
   const stickyModeValue = $("#settings-sticky-mode").value;
   const stickyColorValue = $("#settings-sticky-color").value;
   await api("PUT", "/api/settings/pref/entries_theme", { value: themeValue }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_theme", { value: overviewThemeValue }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_note_size", { value: String(overviewSizeValue) }).catch(() => {});
   await api("PUT", "/api/settings/pref/sticky_note_mode", { value: stickyModeValue }).catch(() => {});
   await api("PUT", "/api/settings/pref/sticky_note_color", { value: stickyColorValue }).catch(() => {});
   applyThemeColors(accent, secondary, bg);
   applyEntriesTheme(themeValue);
+  applyOverviewTheme(overviewThemeValue);
+  applyOverviewNoteSize(overviewSizeValue);
   applyStickyNoteMode(stickyModeValue);
   applyStickyNoteColor(stickyColorValue);
   applyTitle(title, subtitle);
@@ -3917,8 +4097,38 @@ function applyThemeColors(accent, secondary, bg) {
 }
 
 function applyEntriesTheme(theme) {
-  entriesTheme = theme === "notebook" ? "notebook" : "grid";
+  const next = theme === "notebook" ? "notebook" : "grid";
+  const changed = next !== entriesTheme;
+  entriesTheme = next;
   document.body.classList.toggle("entries-notebook", entriesTheme === "notebook");
+  if (changed && state.currentMedia) {
+    state.entriesNotesExpanded = {};
+    state.entriesNotesPage = {};
+    state.entriesNotesPages = {};
+    if (state.currentTab === "entries") renderEntries();
+  }
+}
+
+function applyOverviewTheme(theme) {
+  const next = theme === "notebook" ? "notebook" : "classic";
+  const changed = next !== overviewTheme;
+  overviewTheme = next;
+  document.body.classList.toggle("overview-notebook", overviewTheme === "notebook");
+  if (changed && state.currentMedia && state.currentTab === "overview") {
+    requestAnimationFrame(() => syncOverviewRows());
+  }
+}
+
+function applyOverviewNoteSize(size) {
+  const n = parseInt(size, 10);
+  overviewNoteSize = isNaN(n) ? OVERVIEW_NOTE_DEFAULT : Math.max(OVERVIEW_NOTE_MIN, Math.min(OVERVIEW_NOTE_MAX, n));
+  document.documentElement.style.setProperty("--overview-note-size", overviewNoteSize + "px");
+}
+
+function updateOverviewSettingsUI() {
+  const sizeEl = $("#settings-overview-note-size");
+  const label = $("#settings-overview-note-size-val");
+  if (label && sizeEl) label.textContent = `${parseInt(sizeEl.value, 10) || OVERVIEW_NOTE_DEFAULT}px`;
 }
 
 function applyStickyNoteMode(mode) {
@@ -3967,6 +4177,8 @@ async function initSettings() {
     if (s.accent_color) applyThemeColors(s.accent_color, s.secondary_color || "#b8a7ff", s.bg_color || "#fbf3fa");
     musicAutoplayPref = (s.settings.music_autoplay || "1") !== "0";
     applyEntriesTheme(s.settings.entries_theme || "grid");
+    applyOverviewTheme(s.settings.overview_theme || "classic");
+    applyOverviewNoteSize(s.settings.overview_note_size || String(OVERVIEW_NOTE_DEFAULT));
     applyStickyNoteMode(s.settings.sticky_note_mode || "single");
     applyStickyNoteColor(s.settings.sticky_note_color || "#fff3a3");
     savedHeader = s.settings.header_url || "";
@@ -4122,6 +4334,9 @@ async function init() {
     $("#btn-add-media").addEventListener("click", openAddMediaModal);
     wireLightboxSwipe();
     await initSettings();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => hydrateExpandedNoteCards(state.entries || []));
+    }
     wirePersonAutos();
     setupCompletionChartControls();
     await Promise.all([loadStats(), loadFacets()]);

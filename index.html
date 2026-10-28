@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=28" />
+  <link rel="stylesheet" href="style.css?v=32" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -420,25 +420,32 @@
               </div>
               <div class="overview-media-col"><div id="detail-trailer" class="detail-trailer"></div></div>
             </div>
-            <div class="detail-notes-block">
-              <h3>📝 My Notes</h3>
-              <textarea id="detail-notes" rows="4" placeholder="Your personal notes about this title..." onchange="saveDetailNotes()" onblur="saveDetailNotes()"></textarea>
-            </div>
-            <div class="detail-notes-block hidden" id="detail-review-block">
-              <h3>💭 My Review</h3>
-              <textarea id="detail-review" rows="7" placeholder="Your thoughts, opinions, review or article about this title..." onchange="saveDetailReview()" onblur="saveDetailReview()"></textarea>
+            <div class="detail-notes-row">
+              <div class="detail-notes-block" id="detail-notes-block">
+                <h3>📝 My Notes</h3>
+                <textarea id="detail-notes" rows="4" placeholder="Your personal notes about this title..." onchange="saveDetailNotes()" onblur="saveDetailNotes()"></textarea>
+              </div>
+              <div class="detail-notes-block hidden" id="detail-review-block">
+                <h3>💭 My Review</h3>
+                <textarea id="detail-review" rows="7" placeholder="Your thoughts, opinions, review or article about this title..." onchange="saveDetailReview()" onblur="saveDetailReview()"></textarea>
+              </div>
             </div>
           </div>
 
           <div class="detail-tab-content hidden" id="tab-entries">
             <div class="entries-toolbar">
               <div class="entries-progress" id="entries-progress"></div>
-              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <button class="secondary" onclick="seedEntriesPrompt()">⚬ Seed episode list</button>
+              <div class="entries-toolbar-actions">
                 <button class="secondary notes-filter-btn" id="btn-notes-filter" title="Show only entries with notes" onclick="toggleNotesFilter()">📝 Notes <span id="notes-count">0</span></button>
-                <button class="secondary" id="btn-entries-edit-titles" title="Rename episodes/chapters" onclick="toggleEntriesTitleEdit()">✏️ Edit</button>
-                <button class="secondary hidden" id="btn-entries-paste-titles" title="Paste a list of episode/chapter titles" onclick="openPasteTitlesModal()">📋 Paste titles</button>
-                <button class="secondary" onclick="toggleAllEntries(!allEntriesDone())">Toggle all</button>
+                <div class="entries-more-wrap">
+                  <button class="secondary entries-more-btn" id="btn-entries-more" onclick="toggleEntriesMenu(event)" aria-haspopup="true" aria-expanded="false" title="More actions">⋯</button>
+                  <div class="entries-more-menu hidden" id="entries-more-menu" role="menu">
+                    <button type="button" role="menuitem" onclick="seedEntriesPrompt(); closeEntriesMenu();">⚬ Seed episode list</button>
+                    <button type="button" role="menuitem" id="btn-entries-edit-titles" class="entries-menu-item" title="Rename episodes/chapters" onclick="toggleEntriesTitleEdit(); closeEntriesMenu();">✏️ Edit</button>
+                    <button type="button" role="menuitem" id="btn-entries-paste-titles" class="entries-menu-item hidden" title="Paste a list of episode/chapter titles" onclick="openPasteTitlesModal(); closeEntriesMenu();">📋 Paste titles</button>
+                    <button type="button" role="menuitem" onclick="toggleAllEntries(!allEntriesDone()); closeEntriesMenu();">Toggle all</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div id="entries-list" class="entries-list"></div>
@@ -881,38 +888,80 @@
   <div class="modal hidden" id="modal-settings">
     <div class="modal-content">
       <h2>Settings</h2>
-      <label>Archive title <input type="text" id="settings-title" /></label>
-      <label>Subtitle <input type="text" id="settings-subtitle" /></label>
-      <hr style="border:none; border-top:1px solid var(--border); margin:16px 0; opacity:.4;" />
-      <label>Accent color <input type="color" id="settings-accent" /></label>
-      <label>Secondary color <input type="color" id="settings-secondary" /></label>
-      <label>Background tint <input type="color" id="settings-bg" /></label>
-      <div style="margin:16px 0; text-align:center; color:var(--muted);">— episodes / chapters —</div>
-      <label>Window style
-        <select id="settings-entries-theme" onchange="updateStickySettingsUI()">
-          <option value="grid">Classic grid (default)</option>
-          <option value="notebook">Old notebook</option>
-        </select>
-      </label>
-      <label>Sticky notes
-        <select id="settings-sticky-mode" onchange="updateStickySettingsUI()">
-          <option value="single">Same colour for every note</option>
-          <option value="multi">Rotate through pastel colours</option>
-        </select>
-      </label>
-      <label>Sticky note colour <input type="color" id="settings-sticky-color" oninput="updateStickySettingsUI()" /></label>
-      <div id="settings-sticky-preview" class="sticky-preview-row"></div>
-      <div class="tab-info">Notebook styling affects only the Episodes / Chapters window. Notes become sticky notes there.</div>
-      <div style="margin:16px 0; text-align:center; color:var(--muted);">— header image —</div>
-      <label>Header image URL <input type="text" id="settings-header-url" placeholder="https://..." onblur="onHeaderUrlChange()" /></label>
-      <label>Or upload from disk <input type="file" id="settings-header-upload" accept="image/*" onchange="uploadHeaderFile()" /></label>
-      <div class="settings-header-actions">
-        <button type="button" class="secondary" onclick="randomHeader()"><img src="ico/refresh.svg" class="icon-img-sm" alt=""/> Random header</button>
-        <button type="button" class="secondary danger" onclick="clearHeader()">Remove header</button>
-      </div>
-      <div id="settings-header-gallery" class="settings-header-gallery"></div>
-      <div style="margin:16px 0; text-align:center; color:var(--muted);">— music —</div>
-      <label class="settings-check"><input type="checkbox" id="settings-music-autoplay" /> Autoplay soundtrack when opening the Music tab</label>
+      <details class="settings-section">
+        <summary>General</summary>
+        <div class="settings-section-body">
+          <label>Archive title <input type="text" id="settings-title" /></label>
+          <label>Subtitle <input type="text" id="settings-subtitle" /></label>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Colours</summary>
+        <div class="settings-section-body">
+          <label>Accent color <input type="color" id="settings-accent" /></label>
+          <label>Secondary color <input type="color" id="settings-secondary" /></label>
+          <label>Background tint <input type="color" id="settings-bg" /></label>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Overview</summary>
+        <div class="settings-section-body">
+          <label>Window style
+            <select id="settings-overview-theme" onchange="updateOverviewSettingsUI()">
+              <option value="classic">Classic (default)</option>
+              <option value="notebook">School lined notebook</option>
+            </select>
+          </label>
+          <label class="settings-range-label">Sticky note size — <span id="settings-overview-note-size-val">360px</span>
+            <input type="range" id="settings-overview-note-size" min="220" max="560" step="10" value="360" oninput="updateOverviewSettingsUI()" />
+          </label>
+          <div class="tab-info">The notebook keeps the compact description card beside the video and turns My Notes and My Review into square sticky notes.</div>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Episodes / Chapters</summary>
+        <div class="settings-section-body">
+          <label>Window style
+            <select id="settings-entries-theme" onchange="updateStickySettingsUI()">
+              <option value="grid">Classic grid (default)</option>
+              <option value="notebook">School lined notebook</option>
+            </select>
+          </label>
+          <div class="tab-info">Notebook styling changes the Episodes / Chapters list into a ruled notebook.</div>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Sticky notes</summary>
+        <div class="settings-section-body">
+          <label>Sticky notes
+            <select id="settings-sticky-mode" onchange="updateStickySettingsUI()">
+              <option value="single">Same colour for every note</option>
+              <option value="multi">Rotate through pastel colours</option>
+            </select>
+          </label>
+          <label>Sticky note colour <input type="color" id="settings-sticky-color" oninput="updateStickySettingsUI()" /></label>
+          <div id="settings-sticky-preview" class="sticky-preview-row"></div>
+          <div class="tab-info">Note colours apply to entry notes and Overview sticky notes.</div>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Header image</summary>
+        <div class="settings-section-body">
+          <label>Header image URL <input type="text" id="settings-header-url" placeholder="https://..." onblur="onHeaderUrlChange()" /></label>
+          <label>Or upload from disk <input type="file" id="settings-header-upload" accept="image/*" onchange="uploadHeaderFile()" /></label>
+          <div class="settings-header-actions">
+            <button type="button" class="secondary" onclick="randomHeader()"><img src="ico/refresh.svg" class="icon-img-sm" alt=""/> Random header</button>
+            <button type="button" class="secondary danger" onclick="clearHeader()">Remove header</button>
+          </div>
+          <div id="settings-header-gallery" class="settings-header-gallery"></div>
+        </div>
+      </details>
+      <details class="settings-section">
+        <summary>Music</summary>
+        <div class="settings-section-body">
+          <label class="settings-check"><input type="checkbox" id="settings-music-autoplay" /> Autoplay soundtrack when opening the Music tab</label>
+        </div>
+      </details>
       <div class="modal-actions">
         <button onclick="toggleModal('#modal-settings', false)">Cancel</button>
         <button onclick="saveSettings()">Save Settings</button>
@@ -962,6 +1011,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=29"></script>
+  <script src="app.js?v=35"></script>
 </body>
 </html>
