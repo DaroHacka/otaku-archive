@@ -984,6 +984,7 @@ async function openDetail(id, force = false, opts = {}) {
     if (!state.musicFloating) { const p = $("#music-panel"); if (p && p.parentNode !== $("#music-player")) { $("#music-player").appendChild(p); } }
     $("#list-view").classList.add("hidden");
     showView("detail-view");
+    resetOverviewNotesOverlay();
     renderDetailSplash();
     switchDetailTab(opts.tab || "overview");
     if (!opts.fromNav) api("POST", `/api/media/${id}/view`).catch(() => {});
@@ -1000,6 +1001,7 @@ function closeDetail(suppress) {
   state.currentMedia = null;
   state.entries = [];
   state.credits = [];
+  resetOverviewNotesOverlay();
   updateBrowserUrl("");
 }
 
@@ -1087,6 +1089,7 @@ function syncOverviewRows() {
     row.classList.remove("has-trailer");
   }
   paginateDescription();
+  if (overviewNotesPinned) requestAnimationFrame(positionPinnedOverviewNotes);
 }
 
 let _resizeTimer = null;
@@ -1099,6 +1102,7 @@ window.addEventListener("resize", () => {
 // ---------------- description formatting & paging ----------------
 
 let descBlocks = [];
+let descSource = "";
 let descPage = 1;
 let descPages = [[]];
 
@@ -1141,9 +1145,9 @@ function renderDescription(md) {
   if (!wrap) return;
   descBlocks = [];
   descPage = 1;
-  const raw = cleanDescriptionText(md).trim();
-  if (raw) {
-    for (const part of raw.split(/\n{2,}/)) {
+  descSource = cleanDescriptionText(md).trim();
+  if (descSource) {
+    for (const part of descSource.split(/\n{2,}/)) {
       const p = document.createElement("p");
       p.className = "desc-block";
       p.innerHTML = mdInline(part) || "&nbsp;";
@@ -1153,10 +1157,122 @@ function renderDescription(md) {
   paginateDescription();
 }
 
+function descMakeBlock(text) {
+  const p = document.createElement("p");
+  p.className = "desc-block";
+  p.innerHTML = mdInline(text) || "&nbsp;";
+  return p;
+}
+
+function descMeasureBlock(block, wrap) {
+  wrap.appendChild(block);
+  const h = block.offsetHeight;
+  wrap.removeChild(block);
+  return h;
+}
+
+function descTakeWords(text, maxWords) {
+  const re = /\S+/g;
+  let count = 0;
+  let end = 0;
+  let match;
+  while (count < maxWords && (match = re.exec(text))) {
+    count++;
+    end = re.lastIndex;
+  }
+  if (!count) return { text: "", rest: text, words: 0 };
+  return { text: text.slice(0, end).trim(), rest: text.slice(end), words: count };
+}
+
+function descFitChunk(text, maxWords, wrap, maxHeight) {
+  const cap = Math.max(1, maxWords);
+  let lo = 1;
+  let hi = cap;
+  let best = null;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const take = descTakeWords(text, mid);
+    if (!take.words) break;
+    const block = descMakeBlock(take.text);
+    const height = descMeasureBlock(block, wrap);
+    if (height <= maxHeight) {
+      best = { text: take.text, rest: take.rest, words: take.words, block, height };
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (best) return best;
+  const take = descTakeWords(text, 1);
+  const block = descMakeBlock(take.text);
+  return { text: take.text, rest: take.rest, words: take.words, block, height: descMeasureBlock(block, wrap) };
+}
+
+function buildDescWordPages(wrap, available) {
+  const parts = descSource.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  const pages = [];
+  let page = [];
+  let pageWords = 0;
+  let pageHeight = 0;
+  const flush = () => {
+    if (!page.length) return;
+    pages.push(page);
+    page = [];
+    pageWords = 0;
+    pageHeight = 0;
+  };
+  for (const part of parts) {
+    let remaining = part;
+    while (remaining.trim()) {
+      if (pageWords >= overviewWordsPerPage) flush();
+      const cap = overviewWordsPerPage - pageWords;
+      const room = page.length ? available - pageHeight : available;
+      if (page.length && room < 24) {
+        flush();
+        continue;
+      }
+      const fit = descFitChunk(remaining, cap, wrap, Math.max(24, room));
+      if (!fit.words) break;
+      if (page.length && pageHeight + fit.height > available) {
+        flush();
+        continue;
+      }
+      page.push(fit.block);
+      pageWords += fit.words;
+      pageHeight += fit.height;
+      remaining = fit.rest;
+      if (remaining.trim()) flush();
+    }
+  }
+  flush();
+  return pages.length ? pages : [[]];
+}
+
 function paginateDescription() {
   const wrap = $("#desc-page-wrap");
   if (!wrap) return;
   wrap.innerHTML = "";
+  if (document.body.classList.contains("overview-notebook")) {
+    if (!descSource) {
+      descPages = [[]];
+      descPage = 1;
+      updateDescNav();
+      return;
+    }
+    const available = wrap.clientHeight - 36;
+    if (available < 80) {
+      descPages = [[descMakeBlock(descSource)]];
+      descPage = 1;
+      renderDescPage();
+      updateDescNav();
+      return;
+    }
+    descPages = buildDescWordPages(wrap, available);
+    if (descPage > descPages.length) descPage = 1;
+    renderDescPage();
+    updateDescNav();
+    return;
+  }
   if (!descBlocks.length) {
     descPages = [[]];
     descPage = 1;
@@ -1221,6 +1337,284 @@ function descGoPage(delta) {
   descPage = Math.max(1, Math.min(descPages.length, descPage + delta));
   renderDescPage();
   updateDescNav();
+}
+
+const OVERVIEW_NOTE_LAYOUT_DEFAULT = {
+  notes: { x: 0.55, y: 0.08 },
+  review: { x: 0.05, y: 0.55 },
+};
+const OVERVIEW_NOTE_ATTACH = 64;
+let overviewNotesInitialized = false;
+let overviewNotesPinned = false;
+let overviewNoteDrag = null;
+let overviewNotePositions = {};
+let overviewNoteZ = 90;
+let overviewNoteSpawn = "fixed";
+let overviewNoteLayout = cloneOverviewNoteLayout(OVERVIEW_NOTE_LAYOUT_DEFAULT);
+let overviewNoteLayoutDraft = null;
+let overviewNoteRandomPositions = {};
+let overviewPreviewDrag = null;
+
+function overviewLayoutPoint(point, fallbackX, fallbackY) {
+  const x = point ? Number(point.x) : NaN;
+  const y = point ? Number(point.y) : NaN;
+  return {
+    x: isFinite(x) ? Math.max(-1.5, Math.min(1.5, x)) : fallbackX,
+    y: isFinite(y) ? Math.max(-1.5, Math.min(1.5, y)) : fallbackY,
+  };
+}
+
+function cloneOverviewNoteLayout(layout) {
+  const source = layout || OVERVIEW_NOTE_LAYOUT_DEFAULT;
+  return {
+    notes: overviewLayoutPoint(source.notes, 0.55, 0.08),
+    review: overviewLayoutPoint(source.review, 0.05, 0.55),
+  };
+}
+
+function normalizeOverviewNoteLayout(layout) {
+  const out = cloneOverviewNoteLayout();
+  if (!layout || typeof layout !== "object") return out;
+  ["notes", "review"].forEach((key) => {
+    const point = layout[key];
+    if (!point || typeof point !== "object") return;
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (isFinite(x)) out[key].x = Math.max(-1.5, Math.min(1.5, x));
+    if (isFinite(y)) out[key].y = Math.max(-1.5, Math.min(1.5, y));
+  });
+  return out;
+}
+
+function parseOverviewNoteLayout(raw) {
+  if (!raw) return cloneOverviewNoteLayout(OVERVIEW_NOTE_LAYOUT_DEFAULT);
+  try {
+    return normalizeOverviewNoteLayout(JSON.parse(raw));
+  } catch (e) {
+    return cloneOverviewNoteLayout(OVERVIEW_NOTE_LAYOUT_DEFAULT);
+  }
+}
+
+function overviewNoteKey(block) {
+  return block && block.id === "detail-review-block" ? "review" : "notes";
+}
+
+function overviewNoteAttachBounds(stageRect, descRect, width, height) {
+  const attach = Math.min(OVERVIEW_NOTE_ATTACH, Math.max(24, Math.min(width, height) * 0.25));
+  return {
+    minLeft: descRect.left - stageRect.left - width + attach,
+    maxLeft: descRect.right - stageRect.left - attach,
+    minTop: descRect.top - stageRect.top - height + attach,
+    maxTop: descRect.bottom - stageRect.top - attach,
+  };
+}
+
+function clearPinnedOverviewNoteStyles(row) {
+  if (!row) return;
+  row.classList.remove("pinned");
+  $$(".detail-notes-block", row).forEach((block) => {
+    block.style.left = "";
+    block.style.top = "";
+    block.style.zIndex = "";
+  });
+}
+
+function resetOverviewNotesOverlay() {
+  overviewNotesInitialized = false;
+  overviewNotesPinned = false;
+  overviewNoteDrag = null;
+  overviewNotePositions = {};
+  overviewNoteRandomPositions = {};
+  clearPinnedOverviewNoteStyles($("#tab-overview .detail-notes-row"));
+}
+
+function applyOverviewNotePlacement(spawn, layout) {
+  const nextSpawn = spawn === "inside" || spawn === "below" ? spawn : "fixed";
+  const nextLayout = normalizeOverviewNoteLayout(layout);
+  const changed = nextSpawn !== overviewNoteSpawn || JSON.stringify(nextLayout) !== JSON.stringify(overviewNoteLayout);
+  overviewNoteSpawn = nextSpawn;
+  overviewNoteLayout = nextLayout;
+  if (!changed) return;
+  overviewNoteRandomPositions = {};
+  overviewNoteDrag = null;
+  overviewNotePositions = {};
+  if (state.currentMedia && state.currentTab === "overview") {
+    overviewNotesInitialized = true;
+    requestAnimationFrame(() => { syncOverviewRows(); pinOverviewNotes(); });
+  } else if (state.currentMedia) {
+    resetOverviewNotesOverlay();
+  }
+}
+
+function pinOverviewNotes() {
+  const row = $("#tab-overview .detail-notes-row");
+  if (!row || !state.currentMedia || !document.body.classList.contains("overview-notebook")) {
+    resetOverviewNotesOverlay();
+    return;
+  }
+  if (overviewNoteSpawn === "below") {
+    overviewNotesPinned = false;
+    overviewNoteDrag = null;
+    overviewNotePositions = {};
+    clearPinnedOverviewNoteStyles(row);
+    return;
+  }
+  overviewNotesPinned = true;
+  overviewNotePositions = {};
+  row.classList.add("pinned");
+  requestAnimationFrame(positionPinnedOverviewNotes);
+}
+
+function unpinOverviewNotes() {
+  if (!overviewNotesPinned) return;
+  overviewNotesPinned = false;
+  overviewNoteDrag = null;
+  overviewNotePositions = {};
+  clearPinnedOverviewNoteStyles($("#tab-overview .detail-notes-row"));
+}
+
+function overviewAnchorRect(anchor, block, descRect) {
+  const width = block.offsetWidth;
+  const height = block.offsetHeight;
+  const travelX = Math.max(0, descRect.width - width);
+  const travelY = Math.max(0, descRect.height - height);
+  return {
+    left: travelX * anchor.x,
+    top: travelY * anchor.y,
+    width,
+    height,
+  };
+}
+
+function overviewRectsOverlap(a, b, padding) {
+  return a.left < b.left + b.width + padding
+    && a.left + a.width + padding > b.left
+    && a.top < b.top + b.height + padding
+    && a.top + a.height + padding > b.top;
+}
+
+function ensureOverviewRandomAnchors(blocks, descRect) {
+  const placed = [];
+  blocks.forEach((block) => {
+    const key = overviewNoteKey(block);
+    const anchor = overviewNoteRandomPositions[key];
+    if (anchor) placed.push(overviewAnchorRect(anchor, block, descRect));
+  });
+  blocks.forEach((block) => {
+    const key = overviewNoteKey(block);
+    if (overviewNoteRandomPositions[key]) return;
+    let best = null;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const candidate = { x: Math.random(), y: Math.random() };
+      const rect = overviewAnchorRect(candidate, block, descRect);
+      const overlaps = placed.some((other) => overviewRectsOverlap(rect, other, 14));
+      if (!overlaps) {
+        best = candidate;
+        break;
+      }
+      if (!best) best = candidate;
+    }
+    overviewNoteRandomPositions[key] = best || { x: Math.random(), y: Math.random() };
+    placed.push(overviewAnchorRect(overviewNoteRandomPositions[key], block, descRect));
+  });
+}
+
+function positionPinnedOverviewNotes() {
+  if (!overviewNotesPinned) return;
+  const stage = $("#tab-overview");
+  const desc = $("#detail-description");
+  const row = stage ? $(".detail-notes-row", stage) : null;
+  if (!stage || !desc || !row || !desc.offsetWidth) return;
+  const stageRect = stage.getBoundingClientRect();
+  const descRect = desc.getBoundingClientRect();
+  const blocks = $$(".detail-notes-block", row).filter((block) => !block.classList.contains("hidden"));
+  if (overviewNoteSpawn === "inside") ensureOverviewRandomAnchors(blocks, descRect);
+  blocks.forEach((block) => {
+    const width = block.offsetWidth;
+    const height = block.offsetHeight;
+    if (!width || !height) return;
+    const saved = overviewNotePositions[block.id];
+    const key = overviewNoteKey(block);
+    let left;
+    let top;
+    if (saved) {
+      left = saved.left;
+      top = saved.top;
+    } else {
+      const anchor = overviewNoteSpawn === "inside"
+        ? overviewNoteRandomPositions[key]
+        : overviewNoteLayout[key];
+      const point = anchor || { x: 0.5, y: 0.5 };
+      const rangeX = overviewNoteSpawn === "inside" ? Math.max(0, descRect.width - width) : descRect.width;
+      const rangeY = overviewNoteSpawn === "inside" ? Math.max(0, descRect.height - height) : descRect.height;
+      left = descRect.left - stageRect.left + rangeX * point.x;
+      top = descRect.top - stageRect.top + rangeY * point.y;
+    }
+    const bounds = overviewNoteAttachBounds(stageRect, descRect, width, height);
+    block.style.left = Math.round(Math.max(bounds.minLeft, Math.min(bounds.maxLeft, left))) + "px";
+    block.style.top = Math.round(Math.max(bounds.minTop, Math.min(bounds.maxTop, top))) + "px";
+  });
+}
+
+function startOverviewNoteDrag(ev) {
+  if (!overviewNotesPinned) return;
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  const handle = ev.currentTarget;
+  const block = handle.closest(".detail-notes-block");
+  const stage = $("#tab-overview");
+  if (!block || !stage) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const stageRect = stage.getBoundingClientRect();
+  const rect = block.getBoundingClientRect();
+  const left = rect.left - stageRect.left;
+  const top = rect.top - stageRect.top;
+  block.style.left = left + "px";
+  block.style.top = top + "px";
+  block.style.zIndex = String(++overviewNoteZ);
+  overviewNoteDrag = {
+    block,
+    handle,
+    pointerId: ev.pointerId,
+    grabX: ev.clientX - rect.left,
+    grabY: ev.clientY - rect.top,
+    width: rect.width,
+    height: rect.height,
+    left,
+    top,
+  };
+  try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
+  handle.addEventListener("pointermove", moveOverviewNote);
+  handle.addEventListener("pointerup", endOverviewNoteDrag);
+  handle.addEventListener("pointercancel", endOverviewNoteDrag);
+}
+
+function moveOverviewNote(ev) {
+  const drag = overviewNoteDrag;
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  const stage = $("#tab-overview");
+  const desc = $("#detail-description");
+  if (!stage || !desc) return;
+  ev.preventDefault();
+  const stageRect = stage.getBoundingClientRect();
+  const descRect = desc.getBoundingClientRect();
+  const bounds = overviewNoteAttachBounds(stageRect, descRect, drag.width, drag.height);
+  drag.left = Math.max(bounds.minLeft, Math.min(bounds.maxLeft, ev.clientX - stageRect.left - drag.grabX));
+  drag.top = Math.max(bounds.minTop, Math.min(bounds.maxTop, ev.clientY - stageRect.top - drag.grabY));
+  drag.block.style.left = Math.round(drag.left) + "px";
+  drag.block.style.top = Math.round(drag.top) + "px";
+}
+
+function endOverviewNoteDrag(ev) {
+  const drag = overviewNoteDrag;
+  if (!drag) return;
+  const handle = drag.handle;
+  try { handle.releasePointerCapture(drag.pointerId); } catch (e) {}
+  handle.removeEventListener("pointermove", moveOverviewNote);
+  handle.removeEventListener("pointerup", endOverviewNoteDrag);
+  handle.removeEventListener("pointercancel", endOverviewNoteDrag);
+  overviewNotePositions[drag.block.id] = { left: drag.left, top: drag.top };
+  overviewNoteDrag = null;
 }
 
 // ---------------- gallery ----------------
@@ -1705,6 +2099,7 @@ async function saveDetailReview() {
   await api("POST", `/api/media/${state.currentMedia.id}/status`, { review: v });
   state.currentMedia.review = v;
   $("#detail-review-block").classList.toggle("hidden", !(state.currentMedia.is_completed || v.trim()));
+  if (overviewNotesPinned) requestAnimationFrame(positionPinnedOverviewNotes);
 }
 
 function updateCardState() {
@@ -1724,7 +2119,15 @@ function switchDetailTab(tab) {
   if (tab === "franchise") renderFranchiseTab();
   if (tab === "gallery") renderGallery();
   if (tab === "music") loadMusicTab();
-  if (tab === "overview") paginateDescription();
+  if (tab === "overview") {
+    paginateDescription();
+    if (!overviewNotesInitialized) {
+      overviewNotesInitialized = true;
+      pinOverviewNotes();
+    } else if (overviewNotesPinned) {
+      requestAnimationFrame(positionPinnedOverviewNotes);
+    }
+  }
 }
 
 // ---------------- metadata fetching ----------------
@@ -2162,21 +2565,20 @@ function renderNotesList() {
     const plain = String(full).trim();
     const wordCount = plain.split(/\s+/).filter(Boolean).length;
     const isLong = wordCount > 16 || plain.length > 110;
-    const expanded = isLong && !!(state.entriesNotesExpanded && state.entriesNotesExpanded[e.id]);
+    const expanded = !!(state.entriesNotesExpanded && state.entriesNotesExpanded[e.id]);
     const preview = notePreviewWords(full, 30);
     const meta = `${kind}${e.number}${e.title ? ` · ${esc(e.title)}` : ""}`;
     return `<div class="note-slot ${expanded ? "expanded" : ""}">
-      <div class="note-card ${expanded ? "expanded" : ""}" data-id="${e.id}">
+      <div class="note-card ${expanded ? "expanded" : ""}" data-id="${e.id}" onclick="toggleEntryNoteExpand(${e.id}, event)">
         <div class="note-card-header">
           <div class="note-card-meta" title="${esc(e.title || "")}">${meta}</div>
           <div class="note-card-actions">
-            ${isLong ? `<button class="note-expand-btn" onclick="toggleEntryNoteExpand(${e.id}, event)">${expanded ? "Show less" : "Show more"}</button>` : ""}
             <button class="note-edit-btn" title="Edit note" onclick="openEntryNote(${e.id}); event.stopPropagation();">Edit</button>
           </div>
         </div>
         ${isLong
-          ? `<div class="note-preview" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(preview)}</div>
-             <div class="note-full" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(full).replace(/\n/g, "<br/>")}</div>
+          ? `<div class="note-preview">${esc(preview)}</div>
+             <div class="note-full">${esc(full).replace(/\n/g, "<br/>")}</div>
              <div class="note-zoom-footer hidden">
                <button class="note-page-btn" data-dir="-1" onclick="changeNotePage(${e.id}, -1, event)" aria-label="Previous page">‹</button>
                <span class="note-page-indicator">1/1</span>
@@ -4022,14 +4424,25 @@ let musicAutoplayPref = true;
 let entriesTheme = "grid";
 let overviewTheme = "classic";
 let overviewNoteSize = 360;
+let overviewFontSize = 18;
+let overviewWordsPerPage = 180;
 let stickyNoteColor = "#fff3a3";
 let stickyNoteMode = "single";
 const OVERVIEW_NOTE_MIN = 220;
 const OVERVIEW_NOTE_MAX = 560;
 const OVERVIEW_NOTE_DEFAULT = 360;
+const OVERVIEW_FONT_MIN = 14;
+const OVERVIEW_FONT_MAX = 24;
+const OVERVIEW_FONT_DEFAULT = 18;
+const OVERVIEW_WORDS_MIN = 40;
+const OVERVIEW_WORDS_MAX = 600;
+const OVERVIEW_WORDS_DEFAULT = 180;
 const STICKY_PASTELS = ["#fff3a3", "#ffd6e7", "#d9ecff", "#dff5d8", "#ecdfff", "#ffe2c7"];
 
 async function openSettingsModal() {
+  const spawnEl = $("#settings-overview-note-spawn");
+  if (spawnEl) spawnEl.value = overviewNoteSpawn;
+  overviewNoteLayoutDraft = cloneOverviewNoteLayout(overviewNoteLayout);
   try {
     const s = await api("GET", "/api/settings");
     $("#settings-title").value = s.app_title || "";
@@ -4041,6 +4454,10 @@ async function openSettingsModal() {
     $("#settings-entries-theme").value = s.settings.entries_theme || "grid";
     $("#settings-overview-theme").value = s.settings.overview_theme || "classic";
     $("#settings-overview-note-size").value = s.settings.overview_note_size || String(OVERVIEW_NOTE_DEFAULT);
+    $("#settings-overview-font-size").value = s.settings.overview_font_size || String(OVERVIEW_FONT_DEFAULT);
+    $("#settings-overview-words-page").value = s.settings.overview_words_per_page || String(OVERVIEW_WORDS_DEFAULT);
+    if (spawnEl) spawnEl.value = s.settings.overview_note_spawn || overviewNoteSpawn;
+    if (s.settings.overview_note_layout) overviewNoteLayoutDraft = parseOverviewNoteLayout(s.settings.overview_note_layout);
     $("#settings-sticky-mode").value = s.settings.sticky_note_mode || "single";
     $("#settings-sticky-color").value = s.settings.sticky_note_color || "#fff3a3";
     savedHeader = s.settings.header_url || "";
@@ -4067,17 +4484,28 @@ async function saveSettings() {
   const themeValue = $("#settings-entries-theme").value;
   const overviewThemeValue = $("#settings-overview-theme").value;
   const overviewSizeValue = parseInt($("#settings-overview-note-size").value, 10) || OVERVIEW_NOTE_DEFAULT;
+  const overviewFontValue = parseInt($("#settings-overview-font-size").value, 10) || OVERVIEW_FONT_DEFAULT;
+  const overviewWordsValue = parseInt($("#settings-overview-words-page").value, 10) || OVERVIEW_WORDS_DEFAULT;
+  const overviewSpawnValue = $("#settings-overview-note-spawn").value;
+  const overviewLayoutValue = normalizeOverviewNoteLayout(overviewNoteLayoutDraft || overviewNoteLayout);
   const stickyModeValue = $("#settings-sticky-mode").value;
   const stickyColorValue = $("#settings-sticky-color").value;
   await api("PUT", "/api/settings/pref/entries_theme", { value: themeValue }).catch(() => {});
   await api("PUT", "/api/settings/pref/overview_theme", { value: overviewThemeValue }).catch(() => {});
   await api("PUT", "/api/settings/pref/overview_note_size", { value: String(overviewSizeValue) }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_font_size", { value: String(overviewFontValue) }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_words_per_page", { value: String(overviewWordsValue) }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_note_spawn", { value: overviewSpawnValue }).catch(() => {});
+  await api("PUT", "/api/settings/pref/overview_note_layout", { value: JSON.stringify(overviewLayoutValue) }).catch(() => {});
   await api("PUT", "/api/settings/pref/sticky_note_mode", { value: stickyModeValue }).catch(() => {});
   await api("PUT", "/api/settings/pref/sticky_note_color", { value: stickyColorValue }).catch(() => {});
   applyThemeColors(accent, secondary, bg);
   applyEntriesTheme(themeValue);
   applyOverviewTheme(overviewThemeValue);
   applyOverviewNoteSize(overviewSizeValue);
+  applyOverviewNotePlacement(overviewSpawnValue, overviewLayoutValue);
+  applyOverviewFontSize(overviewFontValue);
+  applyOverviewWordsPerPage(overviewWordsValue);
   applyStickyNoteMode(stickyModeValue);
   applyStickyNoteColor(stickyColorValue);
   applyTitle(title, subtitle);
@@ -4114,8 +4542,16 @@ function applyOverviewTheme(theme) {
   const changed = next !== overviewTheme;
   overviewTheme = next;
   document.body.classList.toggle("overview-notebook", overviewTheme === "notebook");
-  if (changed && state.currentMedia && state.currentTab === "overview") {
-    requestAnimationFrame(() => syncOverviewRows());
+  if (!changed) return;
+  if (overviewTheme === "notebook") {
+    overviewNotesInitialized = false;
+    if (state.currentMedia && state.currentTab === "overview") {
+      overviewNotesInitialized = true;
+      requestAnimationFrame(() => { syncOverviewRows(); pinOverviewNotes(); });
+    }
+  } else {
+    resetOverviewNotesOverlay();
+    if (state.currentMedia && state.currentTab === "overview") requestAnimationFrame(syncOverviewRows);
   }
 }
 
@@ -4123,12 +4559,142 @@ function applyOverviewNoteSize(size) {
   const n = parseInt(size, 10);
   overviewNoteSize = isNaN(n) ? OVERVIEW_NOTE_DEFAULT : Math.max(OVERVIEW_NOTE_MIN, Math.min(OVERVIEW_NOTE_MAX, n));
   document.documentElement.style.setProperty("--overview-note-size", overviewNoteSize + "px");
+  if (overviewNotesPinned) requestAnimationFrame(positionPinnedOverviewNotes);
+}
+
+function applyOverviewFontSize(size) {
+  const n = parseInt(size, 10);
+  overviewFontSize = isNaN(n) ? OVERVIEW_FONT_DEFAULT : Math.max(OVERVIEW_FONT_MIN, Math.min(OVERVIEW_FONT_MAX, n));
+  document.documentElement.style.setProperty("--overview-font-size", overviewFontSize + "px");
+  if (state.currentMedia && state.currentTab === "overview") requestAnimationFrame(syncOverviewRows);
+}
+
+function applyOverviewWordsPerPage(value) {
+  const n = parseInt(value, 10);
+  overviewWordsPerPage = isNaN(n) ? OVERVIEW_WORDS_DEFAULT : Math.max(OVERVIEW_WORDS_MIN, Math.min(OVERVIEW_WORDS_MAX, n));
+  if (state.currentMedia && state.currentTab === "overview") requestAnimationFrame(syncOverviewRows);
+}
+
+function setOverviewPreviewPreset(name) {
+  const presets = {
+    current: overviewNoteLayout,
+    lower: { notes: { x: 0.55, y: 0.55 }, review: { x: 0.05, y: 0.55 } },
+    centre: { notes: { x: 0.37, y: 0.32 }, review: { x: 0.05, y: 0.32 } },
+    corners: { notes: { x: 0.55, y: 0.65 }, review: { x: 0.05, y: 0.65 } },
+    reset: OVERVIEW_NOTE_LAYOUT_DEFAULT,
+  };
+  if (!presets[name]) return;
+  overviewNoteLayoutDraft = cloneOverviewNoteLayout(presets[name]);
+  renderOverviewNotePreview();
+}
+
+function renderOverviewNotePreview() {
+  const preview = $("#settings-note-preview");
+  const paper = $("#settings-note-paper");
+  if (!preview || !paper) return;
+  const modeEl = $("#settings-overview-note-spawn");
+  const mode = modeEl && modeEl.value === "inside" ? "inside" : modeEl && modeEl.value === "below" ? "below" : "fixed";
+  preview.classList.toggle("mode-fixed", mode === "fixed");
+  preview.classList.toggle("mode-inside", mode === "inside");
+  preview.classList.toggle("mode-below", mode === "below");
+  const presets = $("#settings-note-presets");
+  if (presets) presets.classList.toggle("hidden", mode !== "fixed");
+  const help = $("#settings-note-layout-help");
+  if (help) {
+    help.textContent = mode === "inside"
+      ? "Notes spawn at a new random spot inside the paper each time you open a title."
+      : mode === "below"
+        ? "Notes open in the normal row below the description paper."
+        : "Drag the mini notes to choose where each note starts; notes can hang outside the paper while staying attached.";
+  }
+  if (mode !== "fixed") return;
+  const width = paper.clientWidth;
+  const height = paper.clientHeight;
+  if (!width || !height) return;
+  const layout = normalizeOverviewNoteLayout(overviewNoteLayoutDraft || overviewNoteLayout);
+  ["notes", "review"].forEach((key) => {
+    const mini = $(".settings-note-mini." + key, preview);
+    if (!mini) return;
+    const attach = Math.max(10, Math.min(mini.offsetWidth, mini.offsetHeight) * 0.18);
+    const minLeft = -mini.offsetWidth + attach;
+    const maxLeft = width - attach;
+    const minTop = -mini.offsetHeight + attach;
+    const maxTop = height - attach;
+    const left = Math.max(minLeft, Math.min(maxLeft, width * layout[key].x));
+    const top = Math.max(minTop, Math.min(maxTop, height * layout[key].y));
+    mini.style.left = Math.round(left) + "px";
+    mini.style.top = Math.round(top) + "px";
+  });
+}
+
+function startOverviewPreviewDrag(ev, key) {
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  const modeEl = $("#settings-overview-note-spawn");
+  if (!modeEl || modeEl.value !== "fixed") return;
+  const paper = $("#settings-note-paper");
+  const mini = ev.currentTarget;
+  if (!paper || !mini) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (!overviewNoteLayoutDraft) overviewNoteLayoutDraft = cloneOverviewNoteLayout(overviewNoteLayout);
+  const rect = mini.getBoundingClientRect();
+  overviewPreviewDrag = {
+    key,
+    mini,
+    paper,
+    pointerId: ev.pointerId,
+    grabX: ev.clientX - rect.left,
+    grabY: ev.clientY - rect.top,
+  };
+  mini.classList.add("dragging");
+  try { mini.setPointerCapture(ev.pointerId); } catch (e) {}
+  mini.addEventListener("pointermove", moveOverviewPreviewDrag);
+  mini.addEventListener("pointerup", endOverviewPreviewDrag);
+  mini.addEventListener("pointercancel", endOverviewPreviewDrag);
+  moveOverviewPreviewDrag(ev);
+}
+
+function moveOverviewPreviewDrag(ev) {
+  const drag = overviewPreviewDrag;
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  ev.preventDefault();
+  const paperRect = drag.paper.getBoundingClientRect();
+  const attach = Math.max(10, Math.min(drag.mini.offsetWidth, drag.mini.offsetHeight) * 0.18);
+  const minLeft = -drag.mini.offsetWidth + attach;
+  const maxLeft = paperRect.width - attach;
+  const minTop = -drag.mini.offsetHeight + attach;
+  const maxTop = paperRect.height - attach;
+  const left = Math.max(minLeft, Math.min(maxLeft, ev.clientX - paperRect.left - drag.grabX));
+  const top = Math.max(minTop, Math.min(maxTop, ev.clientY - paperRect.top - drag.grabY));
+  drag.mini.style.left = Math.round(left) + "px";
+  drag.mini.style.top = Math.round(top) + "px";
+  if (!overviewNoteLayoutDraft) overviewNoteLayoutDraft = cloneOverviewNoteLayout(overviewNoteLayout);
+  overviewNoteLayoutDraft[drag.key].x = left / paperRect.width;
+  overviewNoteLayoutDraft[drag.key].y = top / paperRect.height;
+}
+
+function endOverviewPreviewDrag(ev) {
+  const drag = overviewPreviewDrag;
+  if (!drag) return;
+  try { drag.mini.releasePointerCapture(drag.pointerId); } catch (e) {}
+  drag.mini.removeEventListener("pointermove", moveOverviewPreviewDrag);
+  drag.mini.removeEventListener("pointerup", endOverviewPreviewDrag);
+  drag.mini.removeEventListener("pointercancel", endOverviewPreviewDrag);
+  drag.mini.classList.remove("dragging");
+  overviewNoteLayoutDraft = normalizeOverviewNoteLayout(overviewNoteLayoutDraft);
+  overviewPreviewDrag = null;
+  renderOverviewNotePreview();
 }
 
 function updateOverviewSettingsUI() {
   const sizeEl = $("#settings-overview-note-size");
   const label = $("#settings-overview-note-size-val");
   if (label && sizeEl) label.textContent = `${parseInt(sizeEl.value, 10) || OVERVIEW_NOTE_DEFAULT}px`;
+  const fontEl = $("#settings-overview-font-size");
+  const fontLabel = $("#settings-overview-font-size-val");
+  if (fontLabel && fontEl) fontLabel.textContent = `${parseInt(fontEl.value, 10) || OVERVIEW_FONT_DEFAULT}px`;
+  if (!overviewNoteLayoutDraft) overviewNoteLayoutDraft = cloneOverviewNoteLayout(overviewNoteLayout);
+  requestAnimationFrame(renderOverviewNotePreview);
 }
 
 function applyStickyNoteMode(mode) {
@@ -4179,6 +4745,9 @@ async function initSettings() {
     applyEntriesTheme(s.settings.entries_theme || "grid");
     applyOverviewTheme(s.settings.overview_theme || "classic");
     applyOverviewNoteSize(s.settings.overview_note_size || String(OVERVIEW_NOTE_DEFAULT));
+    applyOverviewNotePlacement(s.settings.overview_note_spawn || "fixed", parseOverviewNoteLayout(s.settings.overview_note_layout));
+    applyOverviewFontSize(s.settings.overview_font_size || String(OVERVIEW_FONT_DEFAULT));
+    applyOverviewWordsPerPage(s.settings.overview_words_per_page || String(OVERVIEW_WORDS_DEFAULT));
     applyStickyNoteMode(s.settings.sticky_note_mode || "single");
     applyStickyNoteColor(s.settings.sticky_note_color || "#fff3a3");
     savedHeader = s.settings.header_url || "";
@@ -4335,7 +4904,10 @@ async function init() {
     wireLightboxSwipe();
     await initSettings();
     if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => hydrateExpandedNoteCards(state.entries || []));
+      document.fonts.ready.then(() => {
+        hydrateExpandedNoteCards(state.entries || []);
+        if (state.currentMedia && state.currentTab === "overview") syncOverviewRows();
+      });
     }
     wirePersonAutos();
     setupCompletionChartControls();

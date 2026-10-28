@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=32" />
+  <link rel="stylesheet" href="style.css?v=36" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -410,7 +410,7 @@
 
           <div class="detail-tab-content" id="tab-overview">
             <div class="overview-row" id="overview-row">
-              <div id="detail-description" class="detail-description detail-description-box">
+              <div id="detail-description" class="detail-description detail-description-box" onclick="unpinOverviewNotes()">
                 <div id="desc-page-wrap" class="desc-page-wrap"></div>
                 <div id="desc-pagenav" class="desc-pagenav hidden">
                   <span id="desc-page-indicator">1/1</span>
@@ -422,11 +422,11 @@
             </div>
             <div class="detail-notes-row">
               <div class="detail-notes-block" id="detail-notes-block">
-                <h3>📝 My Notes</h3>
+                <h3 onpointerdown="startOverviewNoteDrag(event)">📝 My Notes</h3>
                 <textarea id="detail-notes" rows="4" placeholder="Your personal notes about this title..." onchange="saveDetailNotes()" onblur="saveDetailNotes()"></textarea>
               </div>
               <div class="detail-notes-block hidden" id="detail-review-block">
-                <h3>💭 My Review</h3>
+                <h3 onpointerdown="startOverviewNoteDrag(event)">💭 My Review</h3>
                 <textarea id="detail-review" rows="7" placeholder="Your thoughts, opinions, review or article about this title..." onchange="saveDetailReview()" onblur="saveDetailReview()"></textarea>
               </div>
             </div>
@@ -903,7 +903,7 @@
           <label>Background tint <input type="color" id="settings-bg" /></label>
         </div>
       </details>
-      <details class="settings-section">
+      <details class="settings-section" ontoggle="if (this.open) renderOverviewNotePreview()">
         <summary>Overview</summary>
         <div class="settings-section-body">
           <label>Window style
@@ -915,7 +915,37 @@
           <label class="settings-range-label">Sticky note size — <span id="settings-overview-note-size-val">360px</span>
             <input type="range" id="settings-overview-note-size" min="220" max="560" step="10" value="360" oninput="updateOverviewSettingsUI()" />
           </label>
-          <div class="tab-info">The notebook keeps the compact description card beside the video and turns My Notes and My Review into square sticky notes.</div>
+          <label class="settings-range-label">Notebook text size — <span id="settings-overview-font-size-val">18px</span>
+            <input type="range" id="settings-overview-font-size" min="14" max="24" step="1" value="18" oninput="updateOverviewSettingsUI()" />
+          </label>
+          <label>Words per notebook page <input type="number" id="settings-overview-words-page" min="40" max="600" step="10" value="180" /></label>
+          <label>Sticky note spawn
+            <select id="settings-overview-note-spawn" onchange="updateOverviewSettingsUI()">
+              <option value="fixed">Fixed positions</option>
+              <option value="inside">Random inside the paper</option>
+              <option value="below">Below the paper</option>
+            </select>
+          </label>
+          <div class="settings-note-layout">
+            <div class="settings-note-preview" id="settings-note-preview">
+              <div class="settings-note-paper" id="settings-note-paper">
+                <span class="settings-note-paper-label">Description paper</span>
+                <span class="settings-note-mini notes" onpointerdown="startOverviewPreviewDrag(event, 'notes')">Notes</span>
+                <span class="settings-note-mini review" onpointerdown="startOverviewPreviewDrag(event, 'review')">Review</span>
+                <span class="settings-note-random-hint">Random spawn area</span>
+              </div>
+              <div class="settings-note-below-zone">Notes open below the paper</div>
+            </div>
+            <div class="settings-note-presets" id="settings-note-presets">
+              <button type="button" class="secondary" onclick="setOverviewPreviewPreset('current')">Current</button>
+              <button type="button" class="secondary" onclick="setOverviewPreviewPreset('lower')">Lower third</button>
+              <button type="button" class="secondary" onclick="setOverviewPreviewPreset('centre')">Centre</button>
+              <button type="button" class="secondary" onclick="setOverviewPreviewPreset('corners')">Bottom corners</button>
+              <button type="button" class="secondary" onclick="setOverviewPreviewPreset('reset')">Reset</button>
+            </div>
+          </div>
+          <div class="tab-info" id="settings-note-layout-help">Drag the mini notes to choose where each note starts; notes can hang outside the paper while staying attached.</div>
+          <div class="tab-info">The notebook keeps the compact description card beside the video and turns My Notes and My Review into square sticky notes. Drag a note by its heading to move it; tap the paper to drop notes below.</div>
         </div>
       </details>
       <details class="settings-section">
@@ -1011,6 +1041,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>
