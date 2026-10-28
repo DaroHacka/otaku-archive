@@ -355,6 +355,7 @@ def run_migrations():
         ("trailer_file", "TEXT DEFAULT ''"),
         ("banner_pos", "INTEGER DEFAULT 50"),
         ("season_episodes", "TEXT DEFAULT ''"),
+        ("watch_platform", "TEXT DEFAULT ''"),
     ]:
         if col not in cols:
             _exec_write(cur, f"ALTER TABLE media ADD COLUMN {col} {decl}")
@@ -366,6 +367,12 @@ def run_migrations():
     ]:
         if col not in scols:
             _exec_write(cur, f"ALTER TABLE media_status ADD COLUMN {col} {decl}")
+    ecols = {r["name"] for r in cur.execute("PRAGMA table_info(entries)").fetchall()}
+    for col, decl in [
+        ("title", "TEXT DEFAULT ''"),
+    ]:
+        if col not in ecols:
+            _exec_write(cur, f"ALTER TABLE entries ADD COLUMN {col} {decl}")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS media_images (
@@ -513,6 +520,7 @@ class MediaUpdate(MediaBase):
     category: str = "anime"
     trailer_url: str = ""   # optional; parsed to site+id by frontend, cleared when empty
     season_counts: Optional[List[int]] = None  # per-season episode counts (anime only)
+    watch_platform: str = ""
 
 
 class AddBulkRequest(BaseModel):
@@ -543,6 +551,7 @@ class MediaListItem(BaseModel):
     metadata_json: Optional[str]
     done_count: int
     total_entries: int
+    watch_platform: str = ""
 
 
 class MediaDetail(MediaListItem):
@@ -577,9 +586,18 @@ class EntryItem(BaseModel):
 
 
 class EntryUpdate(BaseModel):
-    title: str = ""
+    title: Optional[str] = None
     is_done: Optional[int] = None
-    notes: str = ""
+    notes: Optional[str] = None
+
+
+class EntryTitleItem(BaseModel):
+    id: int
+    title: str = ""
+
+
+class EntryTitlesUpdate(BaseModel):
+    titles: List[EntryTitleItem]
 
 
 class MusicPathRequest(BaseModel):
@@ -992,6 +1010,7 @@ def _row_to_list_item(row, done_count: int = 0, total_entries: int = 0) -> dict:
         "metadata_json": row["metadata_json"],
         "done_count": done_count,
         "total_entries": total_entries,
+        "watch_platform": (row["watch_platform"] or "") if "watch_platform" in row.keys() else "",
     }
 
 
@@ -1558,6 +1577,7 @@ def list_media(
     q: str = Query(None),
     sort: str = Query("title"),
     favorite_only: bool = Query(False),
+    platform: str = Query(None),
 ):
     conn = get_conn()
     sql = """
@@ -1583,6 +1603,9 @@ def list_media(
     if studio:
         sql += " AND m.studio LIKE ?"
         params.append(f"%{studio}%")
+    if platform:
+        sql += " AND m.watch_platform = ?"
+        params.append(platform)
     if year:
         sql += " AND m.season_year = ?"
         params.append(year)
@@ -1639,12 +1662,17 @@ def add_single_media(data: MediaBase):
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     conn = get_conn()
     cur = conn.cursor()
+    wp = data.watch_platform if hasattr(data, "watch_platform") and data.watch_platform is not None else ""
+    if isinstance(wp, str):
+        wp = wp.strip()
+    else:
+        wp = ""
     _exec_write(
         cur,
         """INSERT INTO media (category, title, type, genres, description, alt_titles,
            studio, season_year, season, episode_count, chapter_count, volume_count,
-           duration, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           duration, watch_platform, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             data.category,
             data.title.strip(),
@@ -1659,6 +1687,7 @@ def add_single_media(data: MediaBase):
             data.chapter_count,
             data.volume_count,
             data.duration,
+            wp,
             now,
             now,
         ),
@@ -1731,6 +1760,7 @@ def get_media_detail(media_id: int):
             "notes": row["notes"] or "",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "watch_platform": (row["watch_platform"] or "") if "watch_platform" in row.keys() else "",
         }
     )
     return item
@@ -1754,12 +1784,17 @@ def update_media(media_id: int, data: MediaUpdate):
         episode_count = data.episode_count
         season_episodes_val = row["season_episodes"] or ""
 
+    wp = data.watch_platform if hasattr(data, "watch_platform") and data.watch_platform is not None else ""
+    if isinstance(wp, str):
+        wp = wp.strip()
+    else:
+        wp = ""
     _exec_write(
         cur,
         """UPDATE media SET category=?, title=?, type=?, genres=?, description=?,
            alt_titles=?, studio=?, season_year=?, season=?, episode_count=?,
            chapter_count=?, volume_count=?, duration=?, trailer_site=?, trailer_id=?,
-           season_episodes=?, updated_at=? WHERE id=?""",
+           season_episodes=?, watch_platform=?, updated_at=? WHERE id=?""",
         (
             data.category,
             data.title.strip(),
@@ -1776,6 +1811,7 @@ def update_media(media_id: int, data: MediaUpdate):
             data.duration,
             *parse_trailer_url(data.trailer_url),
             season_episodes_val,
+            wp,
             time.strftime("%Y-%m-%d %H:%M:%S"),
             media_id,
         ),
@@ -2046,10 +2082,16 @@ def update_entry(entry_id: int, data: EntryUpdate):
     if data.is_done is not None and data.is_done != row["is_done"]:
         new_is_done = 1 if data.is_done else 0
         done_at = time.strftime("%Y-%m-%d %H:%M:%S") if new_is_done else None
+    new_title = row["title"] if "title" in row.keys() else ""
+    if data.title is not None:
+        new_title = data.title.strip() if isinstance(data.title, str) else ""
+    new_notes = row["notes"] if row["notes"] is not None else ""
+    if data.notes is not None:
+        new_notes = data.notes if isinstance(data.notes, str) else ""
     _exec_write(
         cur,
         """UPDATE entries SET title=?, is_done=?, done_at=?, notes=? WHERE id=?""",
-        (data.title, new_is_done, done_at, data.notes, entry_id),
+        (new_title, new_is_done, done_at, new_notes, entry_id),
     )
     conn.commit()
     conn.close()
@@ -2057,9 +2099,33 @@ def update_entry(entry_id: int, data: EntryUpdate):
         "id": entry_id,
         "is_done": new_is_done,
         "done_at": done_at,
-        "title": data.title,
-        "notes": data.notes,
+        "title": new_title,
+        "notes": new_notes,
     }
+
+
+@app.put("/api/media/{media_id}/entries/titles")
+def update_entry_titles(media_id: int, data: EntryTitlesUpdate):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        ids = [t.id for t in data.titles]
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            rows = conn.execute(
+                f"SELECT id FROM entries WHERE media_id=? AND id IN ({placeholders})",
+                (media_id, *ids),
+            ).fetchall()
+            found = {r["id"] for r in rows}
+            missing = [i for i in ids if i not in found]
+            if missing:
+                raise HTTPException(status_code=400, detail="Some entries do not belong to this title")
+        for t in data.titles:
+            _exec_write(cur, "UPDATE entries SET title=? WHERE id=?", ((t.title or "").strip(), t.id))
+        conn.commit()
+        return {"updated": len(data.titles)}
+    finally:
+        conn.close()
 
 
 @app.post("/api/media/{media_id}/entries")
@@ -3225,6 +3291,14 @@ def get_years():
     return [{"year": r["season_year"], "count": r["c"]} for r in rows]
 
 
+@app.get("/api/platforms")
+def get_platforms():
+    conn = get_conn()
+    rows = conn.execute("SELECT watch_platform, COUNT(*) c FROM media WHERE watch_platform IS NOT NULL AND watch_platform != '' GROUP BY watch_platform ORDER BY c DESC, watch_platform ASC").fetchall()
+    conn.close()
+    return [{"name": r["watch_platform"], "count": r["c"]} for r in rows]
+
+
 @app.get("/api/stats")
 def get_stats():
     conn = get_conn()
@@ -3792,9 +3866,4 @@ def stream_music_cover(p: str = Query(...)):
 if __name__ == "__main__":
     import uvicorn
 
-    _port = int(
-        os.environ.get("OTAKU_BACKEND_PORT")
-        or _config.get("backend_port")
-        or 9001
-    )
-    uvicorn.run(app, host="0.0.0.0", port=_port)
+    uvicorn.run(app, host="0.0.0.0", port=9001)

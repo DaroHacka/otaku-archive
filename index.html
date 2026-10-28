@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=25" />
+  <link rel="stylesheet" href="style.css?v=28" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -99,6 +99,15 @@
           <ul id="decade-list" class="sidebar-sub-list hidden"><!-- JS --></ul>
         </div>
 
+        <!-- Platform Filter -->
+        <div id="platform-filter-section" style="margin-top: 20px;">
+          <button class="sidebar-section-btn" id="platform-section-btn" onclick="toggleSidebarSection('platform-list')">
+            <span class="sidebar-section-icon">📺</span>
+            <span class="section-btn-label">Platform</span>
+          </button>
+          <ul id="platform-list" class="sidebar-sub-list hidden"><!-- JS --></ul>
+        </div>
+
         <!-- Collections -->
         <div style="margin-top: 20px;">
           <button class="sidebar-section-btn secondary" onclick="showCollectionsListView()">
@@ -154,7 +163,7 @@
             <div class="stat-chip clickable pastel-pink" id="stat-completed" onclick="applyStatusFilter('completed')"><span class="stat-number">0</span><span class="stat-label">Completed</span></div>
             <div class="stat-chip clickable pastel-purple" id="stat-favorites" onclick="applyStatusFilter('favorite')"><span class="stat-number">0</span><span class="stat-label">Favorites</span></div>
             <div class="stat-chip clickable pastel-blue" id="stat-watching" onclick="applyStatusFilter('watching')"><span class="stat-number">0</span><span class="stat-label">Watching</span></div>
-            <div class="stat-chip pastel-amber" id="stat-hours"><span class="stat-number">0</span><span class="stat-label">Hours Watched</span></div>
+            <div class="stat-chip pastel-amber" id="stat-hours" role="button" tabindex="0" title="Click to toggle hours/days/months" style="cursor:pointer"><span class="stat-number">0</span><span class="stat-label">Hours Watched</span></div>
           </div>
 
           <div class="homepage-chart reveal" id="completion-chart-wrap">
@@ -424,9 +433,11 @@
           <div class="detail-tab-content hidden" id="tab-entries">
             <div class="entries-toolbar">
               <div class="entries-progress" id="entries-progress"></div>
-              <div style="display:flex; gap:8px; align-items:center;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <button class="secondary" onclick="seedEntriesPrompt()">⚬ Seed episode list</button>
                 <button class="secondary notes-filter-btn" id="btn-notes-filter" title="Show only entries with notes" onclick="toggleNotesFilter()">📝 Notes <span id="notes-count">0</span></button>
+                <button class="secondary" id="btn-entries-edit-titles" title="Rename episodes/chapters" onclick="toggleEntriesTitleEdit()">✏️ Edit</button>
+                <button class="secondary hidden" id="btn-entries-paste-titles" title="Paste a list of episode/chapter titles" onclick="openPasteTitlesModal()">📋 Paste titles</button>
                 <button class="secondary" onclick="toggleAllEntries(!allEntriesDone())">Toggle all</button>
               </div>
             </div>
@@ -568,6 +579,7 @@
         <label>Year <input type="number" id="edit-media-year" placeholder="e.g., 1998" /></label>
         <label id="edit-ep-col-label">Episodes <input type="number" id="edit-media-episodes" min="0" /></label>
       </div>
+      <label>Watched/Read on <input type="text" id="edit-media-platform" placeholder="e.g. Crunchyroll, Netflix, Prime Video, Disney+, DVD, Digital file" /></label>
       <label>Studio <input type="text" id="edit-media-studio" placeholder="e.g., Studio Sunrise" /></label>
       <label>Genres <input type="text" id="edit-media-genres" placeholder="Action, Drama, Sci-Fi" /></label>
       <div id="edit-media-season-block">
@@ -672,6 +684,24 @@
       <div class="modal-actions">
         <button onclick="toggleModal('#modal-entry-notes', false)">Cancel</button>
         <button onclick="saveEntryNote()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASTE TITLES MODAL -->
+  <div class="modal hidden" id="modal-paste-titles">
+    <div class="modal-content">
+      <h2>Paste Titles</h2>
+      <label>Apply to
+        <select id="paste-titles-scope"></select>
+      </label>
+      <label>One title per line
+        <textarea id="paste-titles-text" rows="10" placeholder="Episode 1 title&#10;Episode 2 title&#10;Episode 3 title"></textarea>
+      </label>
+      <p class="tab-info">Blank lines are skipped. Each title fills the next episode/chapter in the selected scope. Extra lines are ignored.</p>
+      <div class="modal-actions">
+        <button onclick="toggleModal('#modal-paste-titles', false)">Cancel</button>
+        <button onclick="savePastedTitles()">Apply Titles</button>
       </div>
     </div>
   </div>
@@ -857,6 +887,22 @@
       <label>Accent color <input type="color" id="settings-accent" /></label>
       <label>Secondary color <input type="color" id="settings-secondary" /></label>
       <label>Background tint <input type="color" id="settings-bg" /></label>
+      <div style="margin:16px 0; text-align:center; color:var(--muted);">— episodes / chapters —</div>
+      <label>Window style
+        <select id="settings-entries-theme" onchange="updateStickySettingsUI()">
+          <option value="grid">Classic grid (default)</option>
+          <option value="notebook">Old notebook</option>
+        </select>
+      </label>
+      <label>Sticky notes
+        <select id="settings-sticky-mode" onchange="updateStickySettingsUI()">
+          <option value="single">Same colour for every note</option>
+          <option value="multi">Rotate through pastel colours</option>
+        </select>
+      </label>
+      <label>Sticky note colour <input type="color" id="settings-sticky-color" oninput="updateStickySettingsUI()" /></label>
+      <div id="settings-sticky-preview" class="sticky-preview-row"></div>
+      <div class="tab-info">Notebook styling affects only the Episodes / Chapters window. Notes become sticky notes there.</div>
       <div style="margin:16px 0; text-align:center; color:var(--muted);">— header image —</div>
       <label>Header image URL <input type="text" id="settings-header-url" placeholder="https://..." onblur="onHeaderUrlChange()" /></label>
       <label>Or upload from disk <input type="file" id="settings-header-upload" accept="image/*" onchange="uploadHeaderFile()" /></label>
@@ -916,6 +962,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=29"></script>
 </body>
 </html>

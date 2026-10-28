@@ -18,7 +18,7 @@ const PEOPLE_PAGE_SIZE = 44;
 
 const state = {
   view: "homepage",
-  filters: { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q: null, sort: "title" },
+  filters: { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q: null, sort: "title", platform: null },
   listMedia: [],
   listIds: [],
   currentMedia: null,
@@ -33,6 +33,7 @@ const state = {
   genres: [],
   studios: [],
   years: [],
+  platforms: [],
   stats: null,
   metaCandidates: [],
   assignKind: null,
@@ -340,6 +341,7 @@ function getFilterParams() {
   if (f.letter) p.set("letter", f.letter);
   if (f.q) p.set("q", f.q);
   p.set("sort", f.sort);
+  if (f.platform) p.set("platform", f.platform);
   return p.toString();
 }
 
@@ -406,7 +408,7 @@ function sortMediaList(sort) {
 function performSearch() {
   const q = $("#global-search-input").value.trim();
   if (!q) return;
-  state.filters = { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q, sort: state.filters.sort };
+  state.filters = { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q, sort: state.filters.sort, platform: state.filters.platform };
   loadMediaList();
 }
 
@@ -418,6 +420,7 @@ function selectCategory(cat) {
   state.filters.studio = null;
   state.filters.decade = null;
   state.filters.q = null;
+  state.filters.platform = null;
   updateCategoryButtons();
   loadMediaList();
 }
@@ -430,6 +433,7 @@ function applyStatusFilter(status) {
   state.filters.studio = null;
   state.filters.decade = null;
   state.filters.q = null;
+  state.filters.platform = null;
   setActiveSidebar("status", status);
   loadMediaList();
 }
@@ -455,6 +459,14 @@ function applyDecade(decade) {
   state.filters.status = null;
   state.filters.decade = decade;
   setActiveSidebarList("decade-list", decade);
+  loadMediaList();
+}
+
+function applyPlatform(platform) {
+  state.filters.category = "all";
+  state.filters.status = null;
+  state.filters.platform = platform === state.filters.platform ? null : platform;
+  setActiveSidebarList("platform-list", state.filters.platform);
   loadMediaList();
 }
 
@@ -505,12 +517,13 @@ function toggleStatusFilter() {
 
 async function loadFacets() {
   try {
-    const [g, s, y] = await Promise.all([
+    const [g, st, y, pl] = await Promise.all([
       api("GET", "/api/genres"),
       api("GET", "/api/studios"),
       api("GET", "/api/years"),
+      api("GET", "/api/platforms"),
     ]);
-    state.genres = g; state.studios = s; state.years = y;
+    state.genres = g; state.studios = st; state.years = y; state.platforms = pl || [];
     renderFacetLists();
   } catch (e) {}
 }
@@ -531,9 +544,56 @@ function renderFacetLists() {
     decades[d] = (decades[d] || 0) + y.count;
   });
   dl.innerHTML = Object.keys(decades).sort((a, b) => b - a).map((d) => `<li data-value="${d}" onclick="applyDecade('${d}')"><span>${d}s</span><span class="sub-count">${decades[d]}</span></li>`).join("") || `<li class="more-item">No years yet</li>`;
+
+  const pl = $("#platform-list");
+  if (pl) {
+    pl.innerHTML = (state.platforms || []).map((x) => `<li data-value="${esc(x.name)}" onclick="applyPlatform('${esc(x.name.replace(/'/g, "\\'"))}')"><span>${esc(x.name)}</span><span class="sub-count">${x.count}</span></li>`).join("") || `<li class="more-item">No platforms yet</li>`;
+  }
 }
 
 // ---------------- stats / homepage ----------------
+function getStatsTimeUnit() {
+  try {
+    const v = localStorage.getItem("otaku_stats_time_unit");
+    if (v === "days" || v === "months" || v === "hours") return v;
+  } catch (e) {}
+  return "hours";
+}
+
+function setStatsTimeUnit(u) {
+  try {
+    localStorage.setItem("otaku_stats_time_unit", u);
+  } catch (e) {}
+}
+
+function renderHoursStat() {
+  const s = state.stats || {};
+  const hours = Number(s.hours_watched || 0);
+  const unit = getStatsTimeUnit();
+  const numEl = $("#stat-hours .stat-number");
+  const lblEl = $("#stat-hours .stat-label");
+  if (!numEl) return;
+  if (unit === "days") {
+    const days = hours / 24.0;
+    numEl.textContent = days >= 100 ? Math.round(days) : (Math.round(days * 10) / 10);
+    if (lblEl) lblEl.textContent = "Days Watched";
+    return;
+  }
+  if (unit === "months") {
+    const months = hours / (24.0 * 30.44);
+    if (months >= 0.1) {
+      numEl.textContent = months >= 100 ? Math.round(months) : (Math.round(months * 10) / 10);
+      if (lblEl) lblEl.textContent = "Months Watched";
+    } else {
+      numEl.textContent = hours >= 100 ? Math.round(hours) : (Math.round(hours * 10) / 10);
+      if (lblEl) lblEl.textContent = "Hours Watched";
+    }
+    return;
+  }
+  numEl.textContent = hours >= 100 ? Math.round(hours) : (Math.round(hours * 10) / 10);
+  if (lblEl) lblEl.textContent = "Hours Watched";
+}
+
 async function loadStats() {
   try {
     const s = await api("GET", "/api/stats");
@@ -543,7 +603,7 @@ async function loadStats() {
     $("#stat-completed .stat-number").textContent = s.completed;
     $("#stat-favorites .stat-number").textContent = s.favorites;
     $("#stat-watching .stat-number").textContent = s.watching;
-    $("#stat-hours .stat-number").textContent = s.hours_watched || 0;
+    renderHoursStat();
     $("#count-anime").textContent = s.anime_count;
     $("#count-manga").textContent = s.manga_count;
     $("#count-favorite").textContent = s.favorites;
@@ -785,7 +845,7 @@ async function confirmAddMedia() {
     }
     toast(titles.length > 1 ? `Added ${titles.length} titles` : "Title added");
     toggleModal("#modal-add-media", false);
-    state.filters = { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q: null, sort: state.filters.sort };
+    state.filters = { category: "all", status: null, genre: null, studio: null, decade: null, letter: null, q: null, sort: state.filters.sort, platform: null };
     updateCategoryButtons();
     await loadStats();
     await loadFacets();
@@ -806,6 +866,8 @@ async function openEditMediaModal() {
   $("#edit-media-year").value = m.season_year || "";
   $("#edit-media-studio").value = m.studio || "";
   $("#edit-media-genres").value = m.genres || "";
+  const wpEl = $("#edit-media-platform");
+  if (wpEl) wpEl.value = m.watch_platform || "";
   $("#edit-ep-col-label").innerHTML = (m.category === "manga" ? "Chapters" : "Episodes") + ' <input type="number" id="edit-media-episodes" min="0" />';
   $("#edit-media-episodes").value = m.category === "manga" ? m.chapter_count || "" : m.episode_count || "";
   if (m.category === "manga") {
@@ -860,6 +922,7 @@ function collectSeasonCounts() {
 async function saveEditMedia() {
   const id = $("#edit-media-id").value;
   const m = state.currentMedia;
+  if (!m) return;
   const isManga = m.category === "manga";
   const seasonCounts = isManga ? null : collectSeasonCounts();
   const body = {
@@ -870,11 +933,14 @@ async function saveEditMedia() {
     season_year: parseInt($("#edit-media-year").value) || null,
     episode_count: isManga ? 0 : (seasonCounts ? seasonCounts.reduce((a, b) => a + b, 0) : (parseInt($("#edit-media-episodes").value) || 0)),
     chapter_count: isManga ? (parseInt($("#edit-media-episodes").value) || 0) : 0,
+    volume_count: 0,
     duration: parseInt($("#edit-media-duration").value) || 0,
     description: $("#edit-media-desc").value,
     studio: $("#edit-media-studio").value,
     genres: $("#edit-media-genres").value,
     trailer_url: $("#edit-media-trailer").value.trim(),
+    season_counts: seasonCounts,
+    watch_platform: ($("#edit-media-platform") ? ($("#edit-media-platform").value || "") : ""),
   };
   if (seasonCounts !== null) body.season_counts = seasonCounts;
   showLoading(true);
@@ -1825,17 +1891,25 @@ function renderEntries() {
   const m = state.currentMedia;
   const list = $("#entries-list");
   if (!m) return;
-  const done = state.entries.filter((e) => e.is_done).length;
+  const done = (state.entries || []).filter((e) => e.is_done).length;
   const kind = m.category === "manga" ? "ch" : "ep";
-  const noteCount = state.entries.filter(hasNote).length;
+  const noteCount = (state.entries || []).filter(hasNote).length;
   const notesBtn = $("#btn-notes-filter");
   const notesCount = $("#notes-count");
-  if (notesBtn) notesBtn.classList.toggle("active", state.entriesNotesFilter);
+  if (notesBtn) notesBtn.classList.toggle("active", !!state.entriesNotesFilter);
   if (notesCount) notesCount.textContent = String(noteCount);
-  $("#entries-progress").textContent = state.entries.length
-    ? `${done} / ${state.entries.length} ${state.entries.length > 1 ? kind + "s" : catWord(m.category)} done`
+  const editBtn = $("#btn-entries-edit-titles");
+  if (editBtn) editBtn.classList.toggle("active", !!state.entriesTitleEditMode);
+  const pasteBtn = $("#btn-entries-paste-titles");
+  if (pasteBtn) pasteBtn.classList.toggle("hidden", !state.entriesTitleEditMode);
+  $("#entries-progress").textContent = (state.entries || []).length
+    ? `${done} / ${(state.entries || []).length} ${(state.entries || []).length > 1 ? kind + "s" : catWord(m.category)} done`
     : `No entries yet — use “Seed episode list” to create one.`;
-  const working = state.entriesNotesFilter ? state.entries.filter(hasNote) : state.entries;
+  if (state.entriesNotesFilter) {
+    renderNotesList();
+    return;
+  }
+  const working = state.entries || [];
   const bounds = (m.category === "anime" && Array.isArray(m.season_episodes) && m.season_episodes.length)
     ? seasonBoundaries(m.season_episodes)
     : null;
@@ -1853,27 +1927,127 @@ function renderEntries() {
     groups = [{ label: "", entries: working }];
   }
   list.innerHTML = groups.map((g) => `
-    ${g.label ? `<div class="entry-group-label">${g.label}<span class="muted"> · ${g.entries.length} ${g.entries.length > 1 ? kind + "s" : catWord(m.category)}</span></div>` : ""}
+    ${g.label ? `<div class="entry-group-label"><span class="entry-group-highlight">${g.label}</span><span class="muted"> · ${g.entries.length} ${g.entries.length > 1 ? kind + "s" : catWord(m.category)}</span></div>` : ""}
     <div class="entry-grid">${g.entries.map((e) => entryTileHTML(e, kind)).join("")}</div>`).join("")
-    || (state.entriesNotesFilter
-      ? `<p class="muted">No notes on any ${catWord(m.category)} here yet — tap 📝 on an entry.</p>`
-      : `<p class="muted">No entries yet.</p>`);
+    || `<p class="muted">No entries yet.</p>`;
+}
+
+function entryNumberPadded(number) {
+  return String(number).padStart(2, "0");
+}
+
+function entryFallbackTitle(kind, number) {
+  return (kind === "ch" ? "Chapter " : "Episode ") + entryNumberPadded(number);
 }
 
 function entryTileHTML(e, kind) {
   const note = hasNote(e);
+  const customTitle = (e.title && String(e.title).trim()) ? String(e.title).trim() : "";
+  const editMode = !!state.entriesTitleEditMode;
+  const fallbackTitle = entryFallbackTitle(kind, e.number);
+  const numShort = kind + e.number;
+  const numLong = kind + entryNumberPadded(e.number);
   return `
   <div class="entry-card ${e.is_done ? "done" : ""} ${note ? "has-note" : ""}" id="entry-${e.id}">
     <div class="entry-card-top">
       <span class="entry-check" onclick="toggleEntry(${e.id})">✓</span>
-      <span class="entry-num">${kind}${e.number}</span>
+      <span class="entry-num"><span class="entry-num-short">${numShort}</span><span class="entry-num-long">${numLong}</span></span>
       <button class="entry-notes-btn ${note ? "has-note" : ""}" title="${note ? "Edit note" : "Add note"}" onclick="openEntryNote(${e.id})">📝</button>
     </div>
-    ${e.title ? `<div class="entry-title">${esc(e.title)}</div>` : ""}
+    ${editMode
+      ? `<div class="entry-title-edit"><input class="entry-title-input" value="${esc(customTitle)}" title="${esc(customTitle)}" placeholder="${esc(fallbackTitle)}" data-entry-id="${e.id}" oninput="this.title=this.value" onblur="saveEntryTitle(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"/></div>`
+      : (customTitle
+        ? `<div class="entry-title" title="${esc(customTitle)}">${esc(customTitle)}</div>`
+        : `<div class="entry-title entry-title-fallback-only" title="${esc(fallbackTitle)}"><span class="entry-title-fallback">${esc(fallbackTitle)}</span></div>`)}
   </div>`;
 }
 
+async function saveEntryTitle(input) {
+  const id = parseInt(input.getAttribute("data-entry-id"), 10);
+  if (!id) return;
+  const val = (input.value || "").trim();
+  const e = (state.entries || []).find((x) => x.id === id);
+  try {
+    const res = await api("PUT", `/api/entries/${id}`, { title: val });
+    if (e) e.title = res.title || "";
+    if (!state.entriesTitleEditMode) renderEntries();
+  } catch (err) {
+    toast(err.message, true);
+    if (e && e.title !== undefined) input.value = e.title || "";
+  }
+}
+
+let pasteTitleScopes = [];
+
+function entryTitleScopes() {
+  const m = state.currentMedia;
+  if (!m) return [];
+  const kind = m.category === "manga" ? "chapter" : "episode";
+  const working = (state.entries || []).slice().sort((a, b) => a.number - b.number);
+  if (!working.length) return [];
+  const bounds = (m.category === "anime" && Array.isArray(m.season_episodes) && m.season_episodes.length)
+    ? seasonBoundaries(m.season_episodes)
+    : [];
+  const scopes = [];
+  if (bounds.length) {
+    bounds.forEach((b) => {
+      const entries = working.filter((e) => e.number >= b.start && e.number <= b.end);
+      if (entries.length) scopes.push({ label: `${b.label} (${kind}s ${b.start}–${b.end})`, entries });
+    });
+    const extrasStart = bounds[bounds.length - 1].end + 1;
+    const extras = working.filter((e) => e.number >= extrasStart);
+    if (extras.length) scopes.push({ label: `Extras (${kind}s ${extras[0].number}–${extras[extras.length - 1].number})`, entries: extras });
+  } else {
+    scopes.push({ label: `All ${kind}s (${working[0].number}–${working[working.length - 1].number})`, entries: working });
+  }
+  return scopes;
+}
+
+function openPasteTitlesModal() {
+  if (!state.entriesTitleEditMode) return;
+  pasteTitleScopes = entryTitleScopes();
+  if (!pasteTitleScopes.length) {
+    toast("No entries to paste titles into", true);
+    return;
+  }
+  const sel = $("#paste-titles-scope");
+  if (!sel) return;
+  sel.innerHTML = pasteTitleScopes.map((s, i) => `<option value="${i}">${esc(s.label)}</option>`).join("");
+  $("#paste-titles-text").value = "";
+  toggleModal("#modal-paste-titles", true);
+}
+
+async function savePastedTitles() {
+  const m = state.currentMedia;
+  const sel = $("#paste-titles-scope");
+  if (!m || !sel) return;
+  const scope = pasteTitleScopes[parseInt(sel.value, 10)];
+  if (!scope) return;
+  const lines = ($("#paste-titles-text").value || "").split(/\r?\n/).map((x) => x.trim()).filter((x) => x.length > 0);
+  if (!lines.length) {
+    toast("Paste at least one title", true);
+    return;
+  }
+  const count = Math.min(lines.length, scope.entries.length);
+  const titles = [];
+  for (let i = 0; i < count; i++) titles.push({ id: scope.entries[i].id, title: lines[i] });
+  try {
+    await api("PUT", `/api/media/${m.id}/entries/titles`, { titles });
+    titles.forEach((t) => {
+      const e = (state.entries || []).find((x) => x.id === t.id);
+      if (e) e.title = t.title;
+    });
+    toggleModal("#modal-paste-titles", false);
+    renderEntries();
+    const extra = lines.length > scope.entries.length ? ` ${lines.length - scope.entries.length} extra line(s) ignored.` : "";
+    const left = lines.length < scope.entries.length ? ` ${scope.entries.length - lines.length} unchanged.` : "";
+    toast(`Applied ${count} title${count === 1 ? "" : "s"}.${extra}${left}`);
+  } catch (err) { toast(err.message, true); }
+}
+
 let entryNoteId = null;
+state.entriesTitleEditMode = false;
+state.entriesNotesExpanded = {};
 
 function openEntryNote(id) {
   const e = state.entries.find((x) => x.id === id);
@@ -1905,6 +2079,65 @@ function hasNote(e) {
 
 function toggleNotesFilter() {
   state.entriesNotesFilter = !state.entriesNotesFilter;
+  renderEntries();
+}
+
+function toggleEntriesTitleEdit() {
+  state.entriesTitleEditMode = !state.entriesTitleEditMode;
+  const btn = $("#btn-entries-edit-titles");
+  if (btn) btn.classList.toggle("active", !!state.entriesTitleEditMode);
+  const pasteBtn = $("#btn-entries-paste-titles");
+  if (pasteBtn) pasteBtn.classList.toggle("hidden", !state.entriesTitleEditMode);
+  renderEntries();
+}
+
+function notePreviewWords(text, maxWords = 30) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const parts = t.split(" ");
+  if (parts.length <= maxWords) return t;
+  return parts.slice(0, maxWords).join(" ") + "...";
+}
+
+function renderNotesList() {
+  const m = state.currentMedia;
+  const list = $("#entries-list");
+  if (!m) return;
+  const notes = (state.entries || []).filter(hasNote);
+  if (!notes.length) {
+    list.innerHTML = `<p class="muted">No notes on any ${m.category === "manga" ? "chapters" : "episodes"} here yet.</p>`;
+    return;
+  }
+  const kind = m.category === "manga" ? "ch" : "ep";
+  list.innerHTML = `<div class="notes-filter-list">${notes.map((e) => {
+    const full = e.notes || "";
+    const expanded = !!(state.entriesNotesExpanded && state.entriesNotesExpanded[e.id]);
+    const wordCount = String(full).trim().split(/\s+/).filter(Boolean).length;
+    const isLong = wordCount > 30;
+    const preview = notePreviewWords(full, 30);
+    const meta = `${kind}${e.number}${e.title ? ` · ${esc(e.title)}` : ""}`;
+    return `<div class="note-card ${expanded ? "expanded" : ""}" data-id="${e.id}">
+      <div class="note-card-header">
+        <div class="note-card-meta" title="${esc(e.title || "")}">${meta}</div>
+        <div class="note-card-actions">
+          ${isLong ? `<button class="note-expand-btn" onclick="toggleEntryNoteExpand(${e.id}, event)">${expanded ? "Show less" : "Show more"}</button>` : ""}
+          <button class="note-edit-btn" title="Edit note" onclick="openEntryNote(${e.id}); event.stopPropagation();">Edit</button>
+        </div>
+      </div>
+      ${isLong
+        ? `<div class="note-preview" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(preview)}</div>
+           <div class="note-full" onclick="toggleEntryNoteExpand(${e.id}, event)">${esc(full).replace(/\n/g, "<br/>")}</div>`
+        : `<div class="note-text">${esc(full).replace(/\n/g, "<br/>")}</div>`}
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function toggleEntryNoteExpand(id, ev) {
+  if (!ev) return;
+  const t = ev.target;
+  if (t && t.closest(".note-edit-btn")) return;
+  if (!state.entriesNotesExpanded) state.entriesNotesExpanded = {};
+  state.entriesNotesExpanded[id] = !state.entriesNotesExpanded[id];
   renderEntries();
 }
 
@@ -3005,7 +3238,7 @@ function renderPersonDetail() {
   const castGrid = castCredits.length ? `
     <h3>🎭 Characters</h3>
     <div class="char-appear-grid">${castCredits.map((cr) => `
-      <div class="char-appear-card" onclick="openDetail(${cr.media_id})" data-tip-title="${esc(cr.role || "Character")}" data-tip-sub="${esc(cr.title)}">
+      <div class="char-appear-card" onclick="openDetail(${cr.media_id})" data-tip-title="${esc(cr.role || "Character")}" data-tip-sub="${esc(cr.title || "")}">
         ${portraitImgHTML(cr.character_image, cr.character_pos_x, cr.character_pos_y, cr.role || "?", "person-portrait")}
       </div>`).join("")}
     </div>` : "";
@@ -3620,6 +3853,10 @@ function closeLightbox() {
 // ---------------- settings ----------------
 let savedHeader = "";
 let musicAutoplayPref = true;
+let entriesTheme = "grid";
+let stickyNoteColor = "#fff3a3";
+let stickyNoteMode = "single";
+const STICKY_PASTELS = ["#fff3a3", "#ffd6e7", "#d9ecff", "#dff5d8", "#ecdfff", "#ffe2c7"];
 
 async function openSettingsModal() {
   try {
@@ -3630,8 +3867,12 @@ async function openSettingsModal() {
     $("#settings-secondary").value = getComputedStyle(document.documentElement).getPropertyValue("--secondary").trim() || "#b8a7ff";
     $("#settings-bg").value = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#fbf3fa";
     $("#settings-music-autoplay").checked = musicAutoplayPref;
+    $("#settings-entries-theme").value = s.settings.entries_theme || "grid";
+    $("#settings-sticky-mode").value = s.settings.sticky_note_mode || "single";
+    $("#settings-sticky-color").value = s.settings.sticky_note_color || "#fff3a3";
     savedHeader = s.settings.header_url || "";
   } catch (e) {}
+  updateStickySettingsUI();
   renderHeaderGallery();
   toggleModal("#modal-settings", true);
 }
@@ -3649,7 +3890,16 @@ async function saveSettings() {
   await api("PUT", "/api/settings/pref/bg_color", { value: bg }).catch(() => {});
   musicAutoplayPref = !!$("#settings-music-autoplay").checked;
   await api("PUT", "/api/settings/pref/music_autoplay", { value: musicAutoplayPref ? "1" : "0" }).catch(() => {});
+  const themeValue = $("#settings-entries-theme").value;
+  const stickyModeValue = $("#settings-sticky-mode").value;
+  const stickyColorValue = $("#settings-sticky-color").value;
+  await api("PUT", "/api/settings/pref/entries_theme", { value: themeValue }).catch(() => {});
+  await api("PUT", "/api/settings/pref/sticky_note_mode", { value: stickyModeValue }).catch(() => {});
+  await api("PUT", "/api/settings/pref/sticky_note_color", { value: stickyColorValue }).catch(() => {});
   applyThemeColors(accent, secondary, bg);
+  applyEntriesTheme(themeValue);
+  applyStickyNoteMode(stickyModeValue);
+  applyStickyNoteColor(stickyColorValue);
   applyTitle(title, subtitle);
   const headerUrl = $("#settings-header-url").value.trim();
   if (headerUrl) applyHeaderUrl(headerUrl);
@@ -3664,6 +3914,35 @@ function applyThemeColors(accent, secondary, bg) {
   root.setProperty("--accent-strong", adjustColor(accent, -18));
   root.setProperty("--secondary", secondary);
   root.setProperty("--bg", bg);
+}
+
+function applyEntriesTheme(theme) {
+  entriesTheme = theme === "notebook" ? "notebook" : "grid";
+  document.body.classList.toggle("entries-notebook", entriesTheme === "notebook");
+}
+
+function applyStickyNoteMode(mode) {
+  stickyNoteMode = mode === "multi" ? "multi" : "single";
+  document.body.classList.toggle("sticky-notes-multi", stickyNoteMode === "multi");
+}
+
+function applyStickyNoteColor(hex) {
+  stickyNoteColor = /^#[0-9a-f]{6}$/i.test(hex || "") ? hex : "#fff3a3";
+  const root = document.documentElement.style;
+  root.setProperty("--sticky-note-color", stickyNoteColor);
+  root.setProperty("--sticky-note-color-dark", adjustColor(stickyNoteColor, -24));
+}
+
+function updateStickySettingsUI() {
+  const modeEl = $("#settings-sticky-mode");
+  const colorEl = $("#settings-sticky-color");
+  const preview = $("#settings-sticky-preview");
+  if (!modeEl || !colorEl) return;
+  const mode = modeEl.value === "multi" ? "multi" : "single";
+  colorEl.disabled = mode === "multi";
+  if (!preview) return;
+  const colors = mode === "multi" ? STICKY_PASTELS.slice(0, 5) : [colorEl.value, colorEl.value, colorEl.value, colorEl.value, colorEl.value];
+  preview.innerHTML = colors.map((c, i) => `<span class="sticky-preview-note" style="--note-color:${c}">Note ${i + 1}</span>`).join("");
 }
 
 function adjustColor(hex, delta) {
@@ -3687,6 +3966,9 @@ async function initSettings() {
     if (s.app_title) applyTitle(s.app_title, s.app_subtitle || "");
     if (s.accent_color) applyThemeColors(s.accent_color, s.secondary_color || "#b8a7ff", s.bg_color || "#fbf3fa");
     musicAutoplayPref = (s.settings.music_autoplay || "1") !== "0";
+    applyEntriesTheme(s.settings.entries_theme || "grid");
+    applyStickyNoteMode(s.settings.sticky_note_mode || "single");
+    applyStickyNoteColor(s.settings.sticky_note_color || "#fff3a3");
     savedHeader = s.settings.header_url || "";
     if (savedHeader) setHeaderImage(toAbs(savedHeader));
   } catch (e) {}
@@ -3845,6 +4127,24 @@ async function init() {
     await Promise.all([loadStats(), loadFacets()]);
     try { state.allMediaOptions = await api("GET", "/api/media?sort=title&per_page=500"); } catch (e) { state.allMediaOptions = []; }
     if (!state.allMediaOptions.length) state.allMediaOptions = state.listMedia;
+    const hoursChip = $("#stat-hours");
+    if (hoursChip && !hoursChip.dataset.bound) {
+      hoursChip.dataset.bound = "1";
+      hoursChip.addEventListener("click", () => {
+        const u = getStatsTimeUnit();
+        if (u === "hours") setStatsTimeUnit("days");
+        else if (u === "days") setStatsTimeUnit("months");
+        else setStatsTimeUnit("hours");
+        renderHoursStat();
+      });
+      hoursChip.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          hoursChip.click();
+        }
+      });
+    }
+    renderHoursStat();
     // subtle: listen for adds
   } catch (e) {}
 }
