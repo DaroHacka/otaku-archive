@@ -414,7 +414,7 @@ function performSearch() {
 }
 
 function selectCategory(cat) {
-  state.filters.category = cat;
+  state.filters.category = state.filters.category === cat ? "all" : cat;
   state.filters.status = null;
   state.filters.letter = null;
   state.filters.genre = null;
@@ -427,15 +427,16 @@ function selectCategory(cat) {
 }
 
 function applyStatusFilter(status) {
+  const next = status === state.filters.status ? null : status;
   state.filters.category = "all";
-  state.filters.status = status;
+  state.filters.status = next;
   state.filters.letter = null;
   state.filters.genre = null;
   state.filters.studio = null;
   state.filters.decade = null;
   state.filters.q = null;
   state.filters.platform = null;
-  setActiveSidebar("status", status);
+  setActiveSidebar("status", next);
   loadMediaList();
 }
 
@@ -455,30 +456,34 @@ function resetFacetFilters(keepKey) {
 }
 
 function applyGenre(genre) {
+  const next = genre === state.filters.genre ? null : genre;
   resetFacetFilters("genre");
-  state.filters.genre = genre;
-  setActiveSidebarList("genre-list", genre);
+  state.filters.genre = next;
+  setActiveSidebarList("genre-list", next);
   loadMediaList();
 }
 
 function applyStudio(studio) {
+  const next = studio === state.filters.studio ? null : studio;
   resetFacetFilters("studio");
-  state.filters.studio = studio;
-  setActiveSidebarList("studio-list", studio);
+  state.filters.studio = next;
+  setActiveSidebarList("studio-list", next);
   loadMediaList();
 }
 
 function applyDecade(decade) {
+  const next = decade === state.filters.decade ? null : decade;
   resetFacetFilters("decade");
-  state.filters.decade = decade;
-  setActiveSidebarList("decade-list", decade);
+  state.filters.decade = next;
+  setActiveSidebarList("decade-list", next);
   loadMediaList();
 }
 
 function applyPlatform(platform) {
+  const next = platform === state.filters.platform ? null : platform;
   resetFacetFilters("platform");
-  state.filters.platform = platform === state.filters.platform ? null : platform;
-  setActiveSidebarList("platform-list", state.filters.platform);
+  state.filters.platform = next;
+  setActiveSidebarList("platform-list", next);
   loadMediaList();
 }
 
