@@ -112,6 +112,36 @@ It's built for people who want a **tidy, searchable, good-looking** shelf of the
 * Pick your **accent, secondary, and background colours**.
 * Rotating **header images** with upload and gallery support.
 
+### 📓 Notebook theme
+
+> With this new theme, you can switch to a warmer, more cosy aesthetic where your notes and reviews are styled like sticky notes pinned inside a lined school notebook. I really wanted to capture that nostalgic feel of keeping a personal, physical journal where you jot down your thoughts, impressions, and favourite moments while watching anime.
+
+The notebook theme turns the Overview tab into a ruled school notebook: the description becomes a paginated paper page, while **My Notes** and **My Review** become draggable sticky notes. The Episodes / Chapters list can use the same warm notebook styling, with per-episode notes appearing as sticky-note cards.
+
+<p align="center">
+  <a href="preview/notebook-theme-01.png"><img src="preview/notebook-theme-01.png" width="440" alt="Notebook theme preview 1"></a>
+  &nbsp;&nbsp;
+  <a href="preview/notebook-theme-02.png"><img src="preview/notebook-theme-02.png" width="440" alt="Notebook theme preview 2"></a>
+</p>
+<p align="center">
+  <a href="preview/notebook-theme-03.png"><img src="preview/notebook-theme-03.png" width="440" alt="Notebook theme preview 3"></a>
+  &nbsp;&nbsp;
+  <a href="preview/notebook-theme-04.png"><img src="preview/notebook-theme-04.png" width="440" alt="Notebook theme preview 4"></a>
+</p>
+
+**How it works:** The theme is applied with CSS classes and saved through the existing preferences API, so switching back to Classic is instant and no archive data is rewritten. Description text is paginated client-side using the configured words-per-page value, while Notes and Review are positioned relative to the paper and can be dragged or dropped below it.
+
+**Settings**
+
+* **Settings → Overview → Window style** — choose Classic or School lined notebook.
+* **Sticky note size** — scales the Overview notes.
+* **Notebook text size** — adjusts notebook typography.
+* **Words per notebook page** — controls description pagination.
+* **Sticky note spawn** — fixed positions, random inside the paper, or below the paper.
+* **Layout preview** — drag the mini notes or use Current, Lower third, Centre, Bottom corners, or Reset.
+* **Settings → Sticky notes** — use one colour or rotating pastels; the colour applies to Overview and entry notes.
+* **Settings → Episodes / Chapters → Window style** — switch the episode list to ruled notebook pages.
+
 ---
 
 ## 🧩 Installing
