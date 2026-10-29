@@ -15,6 +15,7 @@ function toAbs(url) {
 
 // ---------------- state ----------------
 const PEOPLE_PAGE_SIZE = 44;
+const COMMON_PLATFORMS = ["Crunchyroll", "Netflix", "Prime Video", "Disney+", "Hulu", "DVD", "Blu-ray", "Digital file"];
 
 const state = {
   view: "homepage",
@@ -438,33 +439,44 @@ function applyStatusFilter(status) {
   loadMediaList();
 }
 
+function resetFacetFilters(keepKey) {
+  const f = state.filters;
+  ["genre", "studio", "decade", "letter", "q", "platform"].forEach((key) => {
+    if (key !== keepKey) f[key] = null;
+  });
+  f.category = "all";
+  f.status = null;
+  setActiveSidebar("status", null);
+  updateCategoryButtons();
+  const listMap = { genre: "genre-list", studio: "studio-list", decade: "decade-list", platform: "platform-list" };
+  Object.keys(listMap).forEach((key) => {
+    if (key !== keepKey) setActiveSidebarList(listMap[key], null);
+  });
+}
+
 function applyGenre(genre) {
-  state.filters.category = "all";
-  state.filters.status = null;
+  resetFacetFilters("genre");
   state.filters.genre = genre;
   setActiveSidebarList("genre-list", genre);
   loadMediaList();
 }
 
 function applyStudio(studio) {
-  state.filters.category = "all";
-  state.filters.status = null;
+  resetFacetFilters("studio");
   state.filters.studio = studio;
   setActiveSidebarList("studio-list", studio);
   loadMediaList();
 }
 
 function applyDecade(decade) {
-  state.filters.category = "all";
-  state.filters.status = null;
+  resetFacetFilters("decade");
   state.filters.decade = decade;
   setActiveSidebarList("decade-list", decade);
   loadMediaList();
 }
 
 function applyPlatform(platform) {
-  state.filters.category = "all";
-  state.filters.status = null;
+  resetFacetFilters("platform");
   state.filters.platform = platform === state.filters.platform ? null : platform;
   setActiveSidebarList("platform-list", state.filters.platform);
   loadMediaList();
@@ -937,10 +949,10 @@ async function saveEditMedia() {
     duration: parseInt($("#edit-media-duration").value) || 0,
     description: $("#edit-media-desc").value,
     studio: $("#edit-media-studio").value,
-    genres: $("#edit-media-genres").value,
+    genres: canonicalGenres($("#edit-media-genres").value),
     trailer_url: $("#edit-media-trailer").value.trim(),
     season_counts: seasonCounts,
-    watch_platform: ($("#edit-media-platform") ? ($("#edit-media-platform").value || "") : ""),
+    watch_platform: ($("#edit-media-platform") ? canonicalFacetValue($("#edit-media-platform").value, platformOptions()) : ""),
   };
   if (seasonCounts !== null) body.season_counts = seasonCounts;
   showLoading(true);
@@ -948,6 +960,7 @@ async function saveEditMedia() {
     await api("PUT", `/api/media/${id}`, body);
     toast("Saved");
     toggleModal("#modal-edit-media", false);
+    await loadFacets();
     await openDetail(id, true);
   } catch (e) { toast(e.message, true); }
   showLoading(false);
@@ -4910,6 +4923,7 @@ async function init() {
       });
     }
     wirePersonAutos();
+    wireFacetAutos();
     setupCompletionChartControls();
     await Promise.all([loadStats(), loadFacets()]);
     try { state.allMediaOptions = await api("GET", "/api/media?sort=title&per_page=500"); } catch (e) { state.allMediaOptions = []; }
@@ -4937,6 +4951,167 @@ async function init() {
 }
 
 document.addEventListener("DOMContentLoaded", () => init());
+
+function facetKey(value) {
+  return String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function canonicalFacetValue(value, options) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  const key = facetKey(text);
+  const match = (options || []).find((item) => facetKey(typeof item === "string" ? item : item.name) === key);
+  if (!match) return text;
+  return typeof match === "string" ? match : match.name;
+}
+
+function canonicalGenres(value) {
+  const seen = new Set();
+  const out = [];
+  String(value || "").split(",").forEach((part) => {
+    const label = canonicalFacetValue(part, state.genres);
+    const key = facetKey(label);
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    out.push(label);
+  });
+  return out.join(", ");
+}
+
+function platformOptions() {
+  const seen = new Set();
+  const out = [];
+  [...(state.platforms || []), ...COMMON_PLATFORMS].forEach((item) => {
+    const name = typeof item === "string" ? item : item.name;
+    const key = facetKey(name);
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    out.push({ name, count: typeof item === "string" ? 0 : item.count || 0 });
+  });
+  return out;
+}
+
+function facetSuggestRows(query, options) {
+  const key = facetKey(query);
+  return (options || [])
+    .filter((item) => !key || facetKey(item.name).includes(key))
+    .sort((a, b) => {
+      const ak = facetKey(a.name);
+      const bk = facetKey(b.name);
+      const ap = key && ak.startsWith(key) ? 0 : 1;
+      const bp = key && bk.startsWith(key) ? 0 : 1;
+      return ap - bp || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name);
+    })
+    .slice(0, 8);
+}
+
+function activeGenreToken(input) {
+  const value = input.value || "";
+  const caret = input.selectionStart == null ? value.length : input.selectionStart;
+  const start = value.lastIndexOf(",", Math.max(0, caret - 1)) + 1;
+  const nextComma = value.indexOf(",", caret);
+  const end = nextComma === -1 ? value.length : nextComma;
+  return { start, end, query: value.slice(start, end).trim() };
+}
+
+function replaceGenreToken(input, label) {
+  const token = activeGenreToken(input);
+  const left = input.value.slice(0, token.start).replace(/[\s,]+$/, "");
+  const right = input.value.slice(token.end).replace(/^[\s,]+/, "");
+  let next = label;
+  if (left) next = left + ", " + next;
+  if (right) next = next + ", " + right;
+  input.value = next;
+  const caret = (left ? left.length + 2 : 0) + label.length;
+  input.setSelectionRange(caret, caret);
+}
+
+function paintFacetSuggest(box, rows, active) {
+  if (!rows.length) {
+    box.innerHTML = "";
+    box.classList.add("hidden");
+    return;
+  }
+  box.innerHTML = rows.map((item, i) => `
+    <div class="facet-suggest-item${i === active ? " active" : ""}" data-index="${i}">
+      <span class="facet-suggest-name">${esc(item.name)}</span>
+      ${item.count ? `<span class="facet-suggest-count">${item.count}</span>` : ""}
+    </div>`).join("");
+  box.classList.remove("hidden");
+}
+
+function wireFacetAutocomplete(input, box, optionsFn, queryFn, pickFn) {
+  if (!input || !box) return;
+  let rows = [];
+  let active = -1;
+  const close = () => {
+    rows = [];
+    active = -1;
+    box.innerHTML = "";
+    box.classList.add("hidden");
+  };
+  const refresh = () => {
+    rows = facetSuggestRows(queryFn(input), optionsFn());
+    active = rows.length ? Math.max(0, Math.min(active, rows.length - 1)) : -1;
+    paintFacetSuggest(box, rows, active);
+  };
+  const pick = (row) => {
+    if (!row) return;
+    pickFn(input, row.name);
+    close();
+  };
+  input.addEventListener("focus", refresh);
+  input.addEventListener("input", refresh);
+  input.addEventListener("keydown", (e) => {
+    if (box.classList.contains("hidden")) {
+      if (e.key === "ArrowDown") {
+        refresh();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      active = (active + 1) % rows.length;
+      paintFacetSuggest(box, rows, active);
+      e.preventDefault();
+    } else if (e.key === "ArrowUp") {
+      active = (active - 1 + rows.length) % rows.length;
+      paintFacetSuggest(box, rows, active);
+      e.preventDefault();
+    } else if (e.key === "Enter" && active >= 0) {
+      pick(rows[active]);
+      e.preventDefault();
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      close();
+    }
+  });
+  box.addEventListener("mousedown", (e) => e.preventDefault());
+  box.addEventListener("click", (e) => {
+    const item = e.target.closest(".facet-suggest-item");
+    if (!item) return;
+    pick(rows[Number(item.dataset.index)]);
+  });
+  input.addEventListener("blur", () => setTimeout(close, 120));
+}
+
+function wireFacetAutos() {
+  wireFacetAutocomplete(
+    $("#edit-media-genres"),
+    $("#edit-media-genres-suggest"),
+    () => state.genres,
+    (input) => activeGenreToken(input).query,
+    (input, name) => replaceGenreToken(input, canonicalFacetValue(name, state.genres))
+  );
+  wireFacetAutocomplete(
+    $("#edit-media-platform"),
+    $("#edit-media-platform-suggest"),
+    () => platformOptions(),
+    (input) => input.value,
+    (input, name) => {
+      input.value = canonicalFacetValue(name, platformOptions());
+    }
+  );
+}
 
 // ---------------- person name autocomplete (dedupe suggestions) ----------------
 function wireAutocomplete(input, suggestBox, onPick) {

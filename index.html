@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=36" />
+  <link rel="stylesheet" href="style.css?v=37" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -586,9 +586,19 @@
         <label>Year <input type="number" id="edit-media-year" placeholder="e.g., 1998" /></label>
         <label id="edit-ep-col-label">Episodes <input type="number" id="edit-media-episodes" min="0" /></label>
       </div>
-      <label>Watched/Read on <input type="text" id="edit-media-platform" placeholder="e.g. Crunchyroll, Netflix, Prime Video, Disney+, DVD, Digital file" /></label>
+      <label>Watched/Read on
+        <div class="facet-input-wrap">
+          <input type="text" id="edit-media-platform" placeholder="e.g. Crunchyroll, Netflix, Prime Video, Disney+, DVD, Digital file" autocomplete="off" />
+          <div class="facet-suggest hidden" id="edit-media-platform-suggest"></div>
+        </div>
+      </label>
       <label>Studio <input type="text" id="edit-media-studio" placeholder="e.g., Studio Sunrise" /></label>
-      <label>Genres <input type="text" id="edit-media-genres" placeholder="Action, Drama, Sci-Fi" /></label>
+      <label>Genres
+        <div class="facet-input-wrap">
+          <input type="text" id="edit-media-genres" placeholder="Action, Drama, Sci-Fi" autocomplete="off" />
+          <div class="facet-suggest hidden" id="edit-media-genres-suggest"></div>
+        </div>
+      </label>
       <div id="edit-media-season-block">
         <div class="season-count-row">
           <label>Number of Seasons <input type="number" id="edit-media-seasons" min="1" max="99" maxlength="2" oninput="seasonCountChanged()" /></label>
@@ -1041,6 +1051,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=39"></script>
+  <script src="app.js?v=40"></script>
 </body>
 </html>

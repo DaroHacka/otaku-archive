@@ -1212,6 +1212,15 @@ body.overview-notebook.sticky-notes-multi #tab-overview .detail-notes-block:nth-
 .pss-name { font-size: 0.85rem; font-weight: 700; color: var(--text); }
 .pss-name em { color: var(--muted); font-weight: 500; font-style: normal; font-size: 0.75rem; margin-left: 4px; }
 
+.facet-input-wrap { position: relative; }
+.facet-suggest { position: absolute; top: calc(100% - 2px); left: 0; right: 0; z-index: 60; max-height: 230px; overflow-y: auto; }
+.facet-suggest:not(.hidden) { border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); background: #fff; }
+.facet-suggest-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: #fff; cursor: pointer; }
+.facet-suggest-item:last-child { border-bottom: none; }
+.facet-suggest-item:hover, .facet-suggest-item.active { background: #f5eefb; }
+.facet-suggest-name { font-size: 0.85rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facet-suggest-count { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; color: var(--muted); }
+
 /* ---------- Modals ---------- */
 .modal {
   position: fixed; inset: 0; background: rgba(60, 30, 70, 0.42); backdrop-filter: blur(4px);

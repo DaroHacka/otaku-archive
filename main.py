@@ -1598,8 +1598,13 @@ def list_media(
         params.append(like)
         params.append(like)
     if genre:
-        sql += " AND (',' || m.genres || ',') LIKE ?"
-        params.append(f"%,{genre},%")
+        sql += (
+            " AND instr("
+            "',' || replace(m.genres, ' ', '') || ',',"
+            "',' || replace(?, ' ', '') || ','"
+            ") > 0"
+        )
+        params.append(genre.strip())
     if studio:
         sql += " AND m.studio LIKE ?"
         params.append(f"%{studio}%")
