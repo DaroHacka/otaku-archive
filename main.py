@@ -1698,7 +1698,7 @@ def add_single_media(data: MediaBase):
         ),
     )
     media_id = cur.lastrowid
-    _exec_write(cur, "INSERT INTO media_status (media_id, plan_to_watch) VALUES (?, 1)", (media_id,))
+    _exec_write(cur, "INSERT INTO media_status (media_id) VALUES (?)", (media_id,))
     conn.commit()
     conn.close()
     threading.Thread(target=_autofind_trailer_job, args=(media_id,), daemon=True).start()
@@ -1723,7 +1723,7 @@ def add_bulk_media(data: AddBulkRequest):
         )
         mid = cur.lastrowid
         ids.append(mid)
-        _exec_write(cur, "INSERT INTO media_status (media_id, plan_to_watch) VALUES (?, 1)", (mid,))
+        _exec_write(cur, "INSERT INTO media_status (media_id) VALUES (?)", (mid,))
     conn.commit()
     conn.close()
     if ids:
