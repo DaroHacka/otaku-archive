@@ -74,6 +74,19 @@ const state = {
 let lastTrailerMsg = "";
 let peopleSearchTimer = null;
 let statusDateMode = null;
+let notebookTabLabel = "Notebook";
+let notebookOwnerId = null;
+let notebookLoaded = false;
+let notebookNotes = [];
+let notebookCurrentId = null;
+let notebookDraft = { title: "", body: "" };
+let notebookPage = 0;
+let notebookPages = 1;
+let notebookSaveTimer = null;
+let notebookSaveInFlight = null;
+let notebookPendingSave = false;
+let notebookStatusTimer = null;
+let notebookBadgeCount = 0;
 
 // ---------------- helpers ----------------
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1086,6 +1099,7 @@ function renderDetailSplash() {
   $("#detail-notes").value = m.notes || "";
   $("#detail-review").value = m.review || "";
   $("#detail-review-block").classList.toggle("hidden", !(m.is_completed || (m.review || "").trim()));
+  updateNotebookTabBadge(m.notebook_count || 0, false);
   renderDetailDates(m);
 
   $$(".detail-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === state.currentTab));
@@ -1114,7 +1128,10 @@ let _resizeTimer = null;
 window.addEventListener("resize", () => {
   if (state.view !== "detail") return;
   clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(syncOverviewRows, 150);
+  _resizeTimer = setTimeout(() => {
+    if (state.currentTab === "notebook") updateNotebookPages(false);
+    syncOverviewRows();
+  }, 150);
 });
 
 // ---------------- description formatting & paging ----------------
@@ -2126,17 +2143,19 @@ function updateCardState() {
 }
 
 function switchDetailTab(tab) {
+  if (state.currentTab === "notebook" && tab !== "notebook") flushNotebookSave();
   state.currentTab = tab;
   closeEntriesMenu();
   navUpdateTab(tab);
   $$(".detail-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  ["overview", "entries", "cast", "franchise", "gallery", "music"].forEach((t) => $("#tab-" + t).classList.toggle("hidden", t !== tab));
+  ["overview", "entries", "cast", "franchise", "gallery", "music", "notebook"].forEach((t) => $("#tab-" + t).classList.toggle("hidden", t !== tab));
   if (tab !== "overview") pauseTrailer();
   if (tab === "entries") renderEntries();
   if (tab === "cast") renderCredits();
   if (tab === "franchise") renderFranchiseTab();
   if (tab === "gallery") renderGallery();
   if (tab === "music") loadMusicTab();
+  if (tab === "notebook") loadNotebookTab();
   if (tab === "overview") {
     paginateDescription();
     if (!overviewNotesInitialized) {
@@ -2146,6 +2165,308 @@ function switchDetailTab(tab) {
       requestAnimationFrame(positionPinnedOverviewNotes);
     }
   }
+}
+
+function applyNotebookLabel(value) {
+  const label = (value || "").trim() || "Notebook";
+  notebookTabLabel = label;
+  const el = $("#detail-notebook-tab-label");
+  if (el) el.textContent = label;
+  updateNotebookTabBadge(notebookBadgeCount, false);
+}
+
+function updateNotebookTabBadge(count, animate) {
+  const n = Math.max(0, parseInt(count, 10) || 0);
+  const btn = $("#detail-notebook-tab");
+  const badge = $("#detail-notebook-count");
+  if (!btn || !badge) return;
+  const changed = n !== notebookBadgeCount;
+  badge.textContent = n > 0 ? String(n) : "";
+  badge.classList.toggle("hidden", n <= 0);
+  btn.classList.toggle("has-notebook-notes", n > 0);
+  btn.setAttribute("aria-label", n > 0 ? notebookTabLabel + ", " + n + (n === 1 ? " note" : " notes") : notebookTabLabel);
+  if (n > 0 && (animate || changed)) {
+    badge.classList.remove("pop");
+    void badge.offsetWidth;
+    badge.classList.add("pop");
+  }
+  notebookBadgeCount = n;
+}
+
+function notebookSetStatus(text) {
+  const el = $("#notebook-save-status");
+  if (!el) return;
+  el.textContent = text;
+  clearTimeout(notebookStatusTimer);
+  if (text) notebookStatusTimer = setTimeout(() => { el.textContent = ""; }, 2200);
+}
+
+function resetNotebookState() {
+  clearTimeout(notebookSaveTimer);
+  notebookSaveTimer = null;
+  notebookOwnerId = null;
+  notebookLoaded = false;
+  notebookNotes = [];
+  notebookCurrentId = null;
+  notebookDraft = { title: "", body: "" };
+  notebookPage = 0;
+  notebookPages = 1;
+  notebookPendingSave = false;
+}
+
+function notebookNoteById(id) {
+  return notebookNotes.find((note) => note.id === id) || null;
+}
+
+function notebookCurrentNote() {
+  return notebookNoteById(notebookCurrentId);
+}
+
+function notebookDraftTitle() {
+  return (notebookDraft.title || "").trim() || "Untitled page";
+}
+
+function renderNotebookNoteTabs() {
+  const box = $("#notebook-note-tabs");
+  if (!box) return;
+  const tabs = notebookNotes.map((note) => {
+    const title = (note.title || "").trim() || "Untitled page";
+    return `<button type="button" class="notebook-note-tab ${note.id === notebookCurrentId ? "active" : ""}" onclick="selectNotebookNote(${note.id})" title="${esc(title)}">${esc(title)}</button>`;
+  });
+  if (notebookCurrentId === null) {
+    tabs.push(`<button type="button" class="notebook-note-tab active draft" title="${esc(notebookDraftTitle())}">${esc(notebookDraftTitle())}</button>`);
+  }
+  box.innerHTML = tabs.join("");
+  const del = $("#notebook-delete-btn");
+  if (del) del.classList.toggle("hidden", notebookCurrentId === null);
+}
+
+function renderNotebookPage(resetPage) {
+  const note = notebookCurrentNote();
+  const titleEl = $("#notebook-title");
+  const bodyEl = $("#notebook-body");
+  if (!titleEl || !bodyEl) return;
+  titleEl.value = note ? note.title : notebookDraft.title;
+  bodyEl.value = note ? note.body : notebookDraft.body;
+  if (resetPage) {
+    notebookPage = 0;
+    bodyEl.scrollTop = 0;
+  }
+  requestAnimationFrame(() => updateNotebookPages(resetPage));
+}
+
+function updateNotebookPages(resetPage) {
+  const el = $("#notebook-body");
+  if (!el) return;
+  const step = Math.max(1, el.clientHeight);
+  notebookPages = Math.max(1, Math.ceil(Math.max(0, el.scrollHeight) / step));
+  if (resetPage) {
+    notebookPage = 0;
+    el.scrollTop = 0;
+  } else if (el.scrollTop > 0) {
+    notebookPage = Math.round(el.scrollTop / step);
+  }
+  notebookPage = Math.max(0, Math.min(notebookPages - 1, notebookPage));
+  updateNotebookPager();
+}
+
+function updateNotebookPager() {
+  const nav = $("#notebook-pagenav");
+  if (!nav) return;
+  if (notebookPages <= 1) {
+    nav.classList.add("hidden");
+    return;
+  }
+  nav.classList.remove("hidden");
+  $("#notebook-page-indicator").textContent = `${notebookPage + 1}/${notebookPages}`;
+  $("#notebook-pager-prev").disabled = notebookPage <= 0;
+  $("#notebook-pager-next").disabled = notebookPage >= notebookPages - 1;
+}
+
+function notebookScrollChanged() {
+  const el = $("#notebook-body");
+  if (!el) return;
+  const step = Math.max(1, el.clientHeight);
+  const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+  let page = Math.round(el.scrollTop / step);
+  if (notebookPages > 1 && el.scrollTop >= maxScroll - 2) page = notebookPages - 1;
+  notebookPage = Math.max(0, Math.min(notebookPages - 1, page));
+  updateNotebookPager();
+}
+
+function notebookGoPage(delta) {
+  const el = $("#notebook-body");
+  if (!el) return;
+  updateNotebookPages(false);
+  notebookPage = Math.max(0, Math.min(notebookPages - 1, notebookPage + delta));
+  el.scrollTop = notebookPage * el.clientHeight;
+  updateNotebookPager();
+}
+
+function notebookChanged() {
+  const note = notebookCurrentNote();
+  const title = $("#notebook-title").value;
+  const body = $("#notebook-body").value;
+  if (note) {
+    note.title = title;
+    note.body = body;
+  } else {
+    notebookDraft.title = title;
+    notebookDraft.body = body;
+  }
+  renderNotebookNoteTabs();
+  scheduleNotebookSave();
+  updateNotebookPages(false);
+}
+
+function scheduleNotebookSave() {
+  clearTimeout(notebookSaveTimer);
+  notebookSaveTimer = setTimeout(() => {
+    notebookSaveTimer = null;
+    saveNotebookNow();
+  }, 650);
+}
+
+function flushNotebookSave() {
+  if (notebookSaveTimer) {
+    clearTimeout(notebookSaveTimer);
+    notebookSaveTimer = null;
+  }
+  return saveNotebookNow();
+}
+
+function saveNotebookNow() {
+  if (notebookSaveInFlight) {
+    notebookPendingSave = true;
+    return notebookSaveInFlight;
+  }
+  const owner = notebookOwnerId;
+  const titleEl = $("#notebook-title");
+  const bodyEl = $("#notebook-body");
+  if (!owner || !titleEl || !bodyEl) return Promise.resolve();
+  const noteId = notebookCurrentId;
+  const title = titleEl.value;
+  const body = bodyEl.value;
+  if (noteId === null && !title.trim() && !body.trim()) return Promise.resolve();
+  notebookSetStatus("Saving...");
+  notebookSaveInFlight = (async () => {
+    try {
+      if (noteId === null) {
+        const created = await api("POST", `/api/media/${owner}/notebook`, { title: title, body: body });
+        notebookNotes.push(created);
+        const titleNow = $("#notebook-title");
+        const bodyNow = $("#notebook-body");
+        if (notebookOwnerId === owner && notebookCurrentId === null && titleNow && bodyNow && titleNow.value === title && bodyNow.value === body) {
+          notebookCurrentId = created.id;
+        }
+        if (state.currentMedia && state.currentMedia.id === owner) {
+          state.currentMedia.notebook_count = notebookNotes.length;
+          updateNotebookTabBadge(notebookNotes.length, true);
+        }
+      } else {
+        const updated = await api("PUT", `/api/media/${owner}/notebook/${noteId}`, { title: title, body: body });
+        const idx = notebookNotes.findIndex((note) => note.id === noteId);
+        if (idx >= 0) notebookNotes[idx] = updated;
+      }
+      notebookSetStatus("Saved");
+    } catch (e) {
+      notebookSetStatus("Save failed");
+      toast(e.message, true);
+    } finally {
+      notebookSaveInFlight = null;
+      if (notebookOwnerId === owner) renderNotebookNoteTabs();
+      if (notebookPendingSave) {
+        notebookPendingSave = false;
+        scheduleNotebookSave();
+      }
+    }
+  })();
+  return notebookSaveInFlight;
+}
+
+async function loadNotebookTab() {
+  const m = state.currentMedia;
+  if (!m) return;
+  if (notebookOwnerId !== m.id) {
+    resetNotebookState();
+    notebookOwnerId = m.id;
+  }
+  if (!notebookLoaded) {
+    try {
+      const res = await api("GET", `/api/media/${m.id}/notebook`);
+      notebookNotes = res.notes || [];
+      notebookLoaded = true;
+      if (notebookNotes.length) {
+        notebookCurrentId = notebookNotes[notebookNotes.length - 1].id;
+      } else {
+        notebookCurrentId = null;
+        notebookDraft = { title: "", body: "" };
+      }
+    } catch (e) {
+      toast(e.message, true);
+      return;
+    }
+  }
+  m.notebook_count = notebookNotes.length;
+  updateNotebookTabBadge(notebookNotes.length, true);
+  renderNotebookNoteTabs();
+  renderNotebookPage(true);
+}
+
+function selectNotebookNote(id) {
+  if (id === notebookCurrentId) return;
+  flushNotebookSave();
+  notebookCurrentId = id;
+  notebookPage = 0;
+  notebookSetStatus("");
+  renderNotebookNoteTabs();
+  renderNotebookPage(true);
+}
+
+function newNotebookDraft() {
+  if (notebookCurrentId === null && !notebookDraft.title.trim() && !notebookDraft.body.trim()) {
+    const currentTitle = $("#notebook-title");
+    if (currentTitle) currentTitle.focus();
+    return;
+  }
+  flushNotebookSave();
+  notebookCurrentId = null;
+  notebookDraft = { title: "", body: "" };
+  notebookPage = 0;
+  notebookSetStatus("");
+  renderNotebookNoteTabs();
+  renderNotebookPage(true);
+  setTimeout(() => {
+    const titleEl = $("#notebook-title");
+    if (titleEl) titleEl.focus();
+  }, 0);
+}
+
+async function deleteNotebookNote() {
+  const note = notebookCurrentNote();
+  if (!note) return;
+  const title = (note.title || "").trim() || "Untitled page";
+  if (!confirm(`Delete "${title}" from this notebook? This cannot be undone.`)) return;
+  clearTimeout(notebookSaveTimer);
+  notebookSaveTimer = null;
+  if (notebookSaveInFlight) await notebookSaveInFlight;
+  try {
+    await api("DELETE", `/api/media/${notebookOwnerId}/notebook/${note.id}`);
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
+  notebookNotes = notebookNotes.filter((item) => item.id !== note.id);
+  notebookCurrentId = notebookNotes.length ? notebookNotes[notebookNotes.length - 1].id : null;
+  if (notebookCurrentId === null) notebookDraft = { title: "", body: "" };
+  notebookPage = 0;
+  notebookSetStatus("");
+  if (state.currentMedia && state.currentMedia.id === notebookOwnerId) {
+    state.currentMedia.notebook_count = notebookNotes.length;
+  }
+  updateNotebookTabBadge(notebookNotes.length, true);
+  renderNotebookNoteTabs();
+  renderNotebookPage(true);
 }
 
 // ---------------- metadata fetching ----------------
@@ -4465,6 +4786,7 @@ async function openSettingsModal() {
     const s = await api("GET", "/api/settings");
     $("#settings-title").value = s.app_title || "";
     $("#settings-subtitle").value = s.app_subtitle || "";
+    $("#settings-notebook-label").value = s.settings.notebook_label || "Notebook";
     $("#settings-accent").value = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#ff8fb2";
     $("#settings-secondary").value = getComputedStyle(document.documentElement).getPropertyValue("--secondary").trim() || "#b8a7ff";
     $("#settings-bg").value = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#fbf3fa";
@@ -4489,11 +4811,13 @@ async function openSettingsModal() {
 async function saveSettings() {
   const title = $("#settings-title").value.trim();
   const subtitle = $("#settings-subtitle").value.trim();
+  const notebookLabelValue = $("#settings-notebook-label").value.trim() || "Notebook";
   const accent = $("#settings-accent").value;
   const secondary = $("#settings-secondary").value;
   const bg = $("#settings-bg").value;
   await api("PUT", "/api/settings/app-title", { value: title }).catch(() => {});
   await api("PUT", "/api/settings/app-subtitle", { value: subtitle }).catch(() => {});
+  await api("PUT", "/api/settings/pref/notebook_label", { value: notebookLabelValue }).catch(() => {});
   await api("PUT", "/api/settings/pref/accent_color", { value: accent }).catch(() => {});
   await api("PUT", "/api/settings/pref/secondary_color", { value: secondary }).catch(() => {});
   await api("PUT", "/api/settings/pref/bg_color", { value: bg }).catch(() => {});
@@ -4526,6 +4850,7 @@ async function saveSettings() {
   applyOverviewWordsPerPage(overviewWordsValue);
   applyStickyNoteMode(stickyModeValue);
   applyStickyNoteColor(stickyColorValue);
+  applyNotebookLabel(notebookLabelValue);
   applyTitle(title, subtitle);
   const headerUrl = $("#settings-header-url").value.trim();
   if (headerUrl) applyHeaderUrl(headerUrl);
@@ -4768,6 +5093,7 @@ async function initSettings() {
     applyOverviewWordsPerPage(s.settings.overview_words_per_page || String(OVERVIEW_WORDS_DEFAULT));
     applyStickyNoteMode(s.settings.sticky_note_mode || "single");
     applyStickyNoteColor(s.settings.sticky_note_color || "#fff3a3");
+    applyNotebookLabel(s.settings.notebook_label || "Notebook");
     savedHeader = s.settings.header_url || "";
     if (savedHeader) setHeaderImage(toAbs(savedHeader));
   } catch (e) {}

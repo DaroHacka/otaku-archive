@@ -334,6 +334,18 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_media_images_media ON media_images(media_id);
 
+        CREATE TABLE IF NOT EXISTS notebook_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_notebook_notes_media ON notebook_notes(media_id, position, id);
+
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -388,6 +400,21 @@ def run_migrations():
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_media_images_media ON media_images(media_id)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notebook_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notebook_notes_media ON notebook_notes(media_id, position, id)")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS media_music (
@@ -570,6 +597,7 @@ class MediaDetail(MediaListItem):
     completed_at: Optional[str]
     review: str
     notes: str
+    notebook_count: int = 0
     created_at: str
     updated_at: str
 
@@ -616,6 +644,16 @@ class StatusUpdate(BaseModel):
     completed_at: Optional[str] = None
     review: Optional[str] = None
     notes: Optional[str] = None
+
+
+class NotebookNoteCreate(BaseModel):
+    title: str = ""
+    body: str = ""
+
+
+class NotebookNoteUpdate(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
 
 
 class PersonCreate(BaseModel):
@@ -1737,7 +1775,8 @@ def get_media_detail(media_id: int):
     row = conn.execute(
         """SELECT m.*, st.*,
               (SELECT COUNT(*) FROM entries e WHERE e.media_id = m.id AND e.is_done = 1) AS done_count,
-              (SELECT COUNT(*) FROM entries e WHERE e.media_id = m.id) AS total_entries
+              (SELECT COUNT(*) FROM entries e WHERE e.media_id = m.id) AS total_entries,
+              (SELECT COUNT(*) FROM notebook_notes n WHERE n.media_id = m.id) AS notebook_count
            FROM media m LEFT JOIN media_status st ON st.media_id = m.id
            WHERE m.id = ?""",
         (media_id,),
@@ -1763,6 +1802,7 @@ def get_media_detail(media_id: int):
             "completed_at": row["completed_at"],
             "review": row["review"] or "",
             "notes": row["notes"] or "",
+            "notebook_count": row["notebook_count"] or 0,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "watch_platform": (row["watch_platform"] or "") if "watch_platform" in row.keys() else "",
@@ -3258,6 +3298,110 @@ def delete_gallery_image(media_id: int, image_id: int):
         except FileNotFoundError:
             pass
     return {"id": image_id}
+
+
+# ---------------------------------------------------------------------------
+# Notebook
+# ---------------------------------------------------------------------------
+
+def _notebook_note_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "media_id": row["media_id"],
+        "title": row["title"] or "",
+        "body": row["body"] or "",
+        "position": row["position"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _get_notebook_note(conn, media_id: int, note_id: int):
+    return conn.execute(
+        "SELECT id, media_id, title, body, position, created_at, updated_at "
+        "FROM notebook_notes WHERE id=? AND media_id=?",
+        (note_id, media_id),
+    ).fetchone()
+
+
+@app.get("/api/media/{media_id}/notebook")
+def list_notebook_notes(media_id: int):
+    if not _media_exists(media_id):
+        raise HTTPException(status_code=404, detail="Title not found")
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, media_id, title, body, position, created_at, updated_at "
+            "FROM notebook_notes WHERE media_id=? ORDER BY position, id",
+            (media_id,),
+        ).fetchall()
+        return {"notes": [_notebook_note_dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/media/{media_id}/notebook")
+def create_notebook_note(media_id: int, data: NotebookNoteCreate):
+    if not _media_exists(media_id):
+        raise HTTPException(status_code=404, detail="Title not found")
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_conn()
+    cur = conn.cursor()
+    position = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM notebook_notes WHERE media_id=?",
+        (media_id,),
+    ).fetchone()[0]
+    _exec_write(
+        cur,
+        "INSERT INTO notebook_notes (media_id, title, body, position, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (media_id, data.title or "", data.body or "", position, now, now),
+    )
+    note_id = cur.lastrowid
+    conn.commit()
+    row = _get_notebook_note(conn, media_id, note_id)
+    conn.close()
+    return _notebook_note_dict(row)
+
+
+@app.put("/api/media/{media_id}/notebook/{note_id}")
+def update_notebook_note(media_id: int, note_id: int, data: NotebookNoteUpdate):
+    conn = get_conn()
+    cur = conn.cursor()
+    row = _get_notebook_note(conn, media_id, note_id)
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Notebook page not found")
+    fields = []
+    params = []
+    if data.title is not None:
+        fields.append("title = ?")
+        params.append(data.title)
+    if data.body is not None:
+        fields.append("body = ?")
+        params.append(data.body)
+    if fields:
+        fields.append("updated_at = ?")
+        params.append(time.strftime("%Y-%m-%d %H:%M:%S"))
+        params.append(note_id)
+        _exec_write(cur, f"UPDATE notebook_notes SET {', '.join(fields)} WHERE id=?", params)
+        conn.commit()
+        row = _get_notebook_note(conn, media_id, note_id)
+    conn.close()
+    return _notebook_note_dict(row)
+
+
+@app.delete("/api/media/{media_id}/notebook/{note_id}")
+def delete_notebook_note(media_id: int, note_id: int):
+    conn = get_conn()
+    row = _get_notebook_note(conn, media_id, note_id)
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Notebook page not found")
+    conn.execute("DELETE FROM notebook_notes WHERE id=?", (note_id,))
+    conn.commit()
+    conn.close()
+    return {"id": note_id}
 
 
 # ---------------------------------------------------------------------------

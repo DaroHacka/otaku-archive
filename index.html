@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Anime &amp; Manga Archive</title>
-  <link rel="stylesheet" href="style.css?v=37" />
+  <link rel="stylesheet" href="style.css?v=38" />
   <link rel="icon" type="image/svg+xml" href="ico/logo.svg" />
 </head>
 <body>
@@ -406,6 +406,7 @@
             <button class="tab-btn" data-tab="franchise" onclick="switchDetailTab('franchise')">🔗 Franchise</button>
             <button class="tab-btn" data-tab="gallery" onclick="switchDetailTab('gallery')">🖼 Gallery</button>
             <button class="tab-btn" data-tab="music" onclick="switchDetailTab('music')">🎵 Music</button>
+            <button class="tab-btn" id="detail-notebook-tab" data-tab="notebook" onclick="switchDetailTab('notebook')">📓 <span id="detail-notebook-tab-label">Notebook</span><span class="tab-count hidden" id="detail-notebook-count"></span></button>
           </div>
 
           <div class="detail-tab-content" id="tab-overview">
@@ -535,6 +536,31 @@
                 </div>
                 <div id="music-info" class="music-info hidden"><span class="music-info-text" id="music-info-text"></span></div>
               </div>
+            </div>
+          </div>
+
+          <div class="detail-tab-content hidden" id="tab-notebook">
+            <div class="notebook-shell">
+              <div class="notebook-notes-bar">
+                <span class="notebook-notes-caption">Pages</span>
+                <div class="notebook-note-tabs" id="notebook-note-tabs"></div>
+                <div class="notebook-notes-actions">
+                  <button type="button" class="secondary notebook-new-btn" onclick="newNotebookDraft()">+ New page</button>
+                  <button type="button" class="secondary danger notebook-delete-btn hidden" id="notebook-delete-btn" onclick="deleteNotebookNote()">Delete</button>
+                </div>
+              </div>
+              <div class="notebook-paper" id="notebook-paper">
+                <input class="notebook-title-input" id="notebook-title" maxlength="120" placeholder="Page title..." oninput="notebookChanged()" onblur="flushNotebookSave()" />
+                <div class="notebook-body-wrap">
+                  <textarea class="notebook-body" id="notebook-body" spellcheck="true" placeholder="Write anything you like..." oninput="notebookChanged()" onblur="flushNotebookSave()" onscroll="notebookScrollChanged()"></textarea>
+                </div>
+                <div class="notebook-pagenav hidden" id="notebook-pagenav">
+                  <span id="notebook-page-indicator">1/1</span>
+                  <button type="button" class="desc-pager-btn" id="notebook-pager-prev" onclick="notebookGoPage(-1)" aria-label="Previous page">‹</button>
+                  <button type="button" class="desc-pager-btn" id="notebook-pager-next" onclick="notebookGoPage(1)" aria-label="Next page">›</button>
+                </div>
+              </div>
+              <div class="notebook-save-status" id="notebook-save-status"></div>
             </div>
           </div>
         </section>
@@ -903,6 +929,7 @@
         <div class="settings-section-body">
           <label>Archive title <input type="text" id="settings-title" /></label>
           <label>Subtitle <input type="text" id="settings-subtitle" /></label>
+          <label>Notebook tab name <input type="text" id="settings-notebook-label" maxlength="40" placeholder="Notebook" /></label>
         </div>
       </details>
       <details class="settings-section">
@@ -1051,6 +1078,6 @@
 
   <script>window.OTAKU_BACKEND_PORT = window.OTAKU_BACKEND_PORT || 9001;</script>
   <script src="config.js"></script>
-  <script src="app.js?v=41"></script>
+  <script src="app.js?v=42"></script>
 </body>
 </html>
